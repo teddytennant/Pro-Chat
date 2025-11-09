@@ -8,12 +8,38 @@
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>Pro-Chat</h1>
-            <p class="subtitle">AI Chat for Techies • Press <kbd>?</kbd> for shortcuts</p>
-        </header>
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <h2>Conversations</h2>
+                <button id="new-chat-btn" class="btn btn-small" aria-label="New conversation" title="New Conversation (Ctrl+N)">
+                    + New
+                </button>
+            </div>
+            <div id="conversations-list" class="conversations-list" role="list" aria-label="Conversation list">
+                <!-- Conversation items will be added here -->
+            </div>
+            <button id="toggle-sidebar-btn" class="toggle-sidebar-btn" aria-label="Toggle sidebar">
+                ◀
+            </button>
+        </aside>
         
-        <div id="chat-container" class="chat-container" tabindex="0" role="log" aria-live="polite" aria-label="Chat messages">
+        <div class="main-content">
+            <header>
+                <div class="header-content">
+                    <div class="header-left">
+                        <button id="sidebar-toggle-mobile" class="btn-icon" aria-label="Toggle sidebar">☰</button>
+                        <h1>Pro-Chat</h1>
+                    </div>
+                    <div class="header-right">
+                        <p class="subtitle">AI Chat for Techies • Press <kbd>?</kbd> for shortcuts</p>
+                    </div>
+                </div>
+                <div id="conversation-title" class="conversation-title" contenteditable="true" aria-label="Conversation title">
+                    New Conversation
+                </div>
+            </header>
+            
+            <div id="chat-container" class="chat-container" tabindex="0" role="log" aria-live="polite" aria-label="Chat messages">
             <div class="welcome-message">
                 <p>Welcome to Pro-Chat! A lightweight AI chat interface built for keyboard navigation.</p>
                 <p>Type your message below and press <kbd>Enter</kbd> to send.</p>
@@ -33,8 +59,11 @@
                 <button id="send-btn" class="btn btn-primary" aria-label="Send message">
                     Send <span class="shortcut">↵</span>
                 </button>
-                <button id="clear-btn" class="btn btn-secondary" aria-label="Clear chat">
-                    Clear <span class="shortcut">Ctrl+L</span>
+                <button id="delete-chat-btn" class="btn btn-secondary" aria-label="Delete conversation">
+                    Delete <span class="shortcut">Ctrl+D</span>
+                </button>
+                <button id="export-btn" class="btn btn-secondary" aria-label="Export conversation">
+                    Export
                 </button>
             </div>
         </div>
@@ -42,6 +71,7 @@
         <div class="status-bar">
             <span id="status" class="status-text">Ready</span>
             <span id="model-info" class="model-info">GPT-4</span>
+        </div>
         </div>
     </div>
     
@@ -57,6 +87,14 @@
                 <div class="shortcut-item">
                     <kbd>Shift</kbd> + <kbd>Enter</kbd>
                     <span>New line</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>Ctrl</kbd> + <kbd>N</kbd>
+                    <span>New conversation</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>Ctrl</kbd> + <kbd>D</kbd>
+                    <span>Delete conversation</span>
                 </div>
                 <div class="shortcut-item">
                     <kbd>Ctrl</kbd> + <kbd>L</kbd>
