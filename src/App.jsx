@@ -186,11 +186,18 @@ function App() {
     }
 
     // Create new chat if none exists
-    if (!currentChatId) {
-      createNewChat()
-      // Wait for state to update
-      setTimeout(() => sendMessage(), 100)
-      return
+    let chatId = currentChatId
+    if (!chatId) {
+      const newChat = {
+        id: Date.now().toString(),
+        title: 'New Chat',
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }
+      setChats(prev => [newChat, ...prev])
+      setCurrentChatId(newChat.id)
+      chatId = newChat.id
     }
 
     setInputValue('')
@@ -199,7 +206,7 @@ function App() {
     
     // Update chat title if it's the first message
     if (messages.length === 0) {
-      updateChatTitle(currentChatId, message)
+      updateChatTitle(chatId, message)
     }
 
     setIsLoading(true)
