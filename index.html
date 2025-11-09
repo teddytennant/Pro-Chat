@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pro-Chat - AI Chat for Techies</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Pro-Chat</h1>
+            <p class="subtitle">AI Chat for Techies • Press <kbd>?</kbd> for shortcuts</p>
+        </header>
+        
+        <div id="chat-container" class="chat-container" tabindex="0" role="log" aria-live="polite" aria-label="Chat messages">
+            <div class="welcome-message">
+                <p>Welcome to Pro-Chat! A lightweight AI chat interface built for keyboard navigation.</p>
+                <p>Type your message below and press <kbd>Enter</kbd> to send.</p>
+            </div>
+        </div>
+        
+        <div class="input-area">
+            <textarea 
+                id="user-input" 
+                class="message-input" 
+                placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
+                rows="3"
+                aria-label="Message input"
+                autofocus
+            ></textarea>
+            <div class="input-actions">
+                <button id="send-btn" class="btn btn-primary" aria-label="Send message">
+                    Send <span class="shortcut">↵</span>
+                </button>
+                <button id="clear-btn" class="btn btn-secondary" aria-label="Clear chat">
+                    Clear <span class="shortcut">Ctrl+L</span>
+                </button>
+            </div>
+        </div>
+        
+        <div class="status-bar">
+            <span id="status" class="status-text">Ready</span>
+            <span id="model-info" class="model-info">GPT-4</span>
+        </div>
+    </div>
+    
+    <div id="shortcuts-modal" class="modal" role="dialog" aria-labelledby="shortcuts-title" aria-hidden="true">
+        <div class="modal-content">
+            <button class="modal-close" aria-label="Close shortcuts">&times;</button>
+            <h2 id="shortcuts-title">Keyboard Shortcuts</h2>
+            <div class="shortcuts-grid">
+                <div class="shortcut-item">
+                    <kbd>Enter</kbd>
+                    <span>Send message</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>Shift</kbd> + <kbd>Enter</kbd>
+                    <span>New line</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>Ctrl</kbd> + <kbd>L</kbd>
+                    <span>Clear chat</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>?</kbd>
+                    <span>Show this help</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>Esc</kbd>
+                    <span>Close help / Focus input</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>Tab</kbd>
+                    <span>Navigate elements</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>Ctrl</kbd> + <kbd>K</kbd>
+                    <span>Focus input</span>
+                </div>
+                <div class="shortcut-item">
+                    <kbd>↑</kbd> / <kbd>↓</kbd>
+                    <span>Scroll chat</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="settings-modal" class="modal" role="dialog" aria-labelledby="settings-title" aria-hidden="true">
+        <div class="modal-content">
+            <button class="modal-close" aria-label="Close settings">&times;</button>
+            <h2 id="settings-title">Settings</h2>
+            <div class="settings-form">
+                <div class="form-group">
+                    <label for="api-key">OpenAI API Key:</label>
+                    <input 
+                        type="password" 
+                        id="api-key" 
+                        class="form-input" 
+                        placeholder="sk-..."
+                        aria-label="OpenAI API Key"
+                    >
+                    <small>Your API key is stored locally and never sent anywhere except OpenAI.</small>
+                </div>
+                <div class="form-group">
+                    <label for="model-select">Model:</label>
+                    <select id="model-select" class="form-input" aria-label="Select AI model">
+                        <option value="gpt-4">GPT-4</option>
+                        <option value="gpt-4-turbo-preview">GPT-4 Turbo</option>
+                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                    </select>
+                </div>
+                <button id="save-settings" class="btn btn-primary">Save Settings</button>
+            </div>
+        </div>
+    </div>
+    
+    <button id="settings-btn" class="floating-btn" aria-label="Open settings" title="Settings (Ctrl+,)">
+        ⚙
+    </button>
+    
+    <script src="app.js"></script>
+</body>
+</html>
