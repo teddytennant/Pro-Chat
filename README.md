@@ -9,6 +9,13 @@
 - 🚀 **Lightweight** - Vanilla JavaScript, no frameworks or dependencies
 - 🔒 **Privacy-Focused** - API key stored locally, never sent anywhere except OpenAI
 - ⚡ **Fast & Responsive** - Optimized for speed and efficiency
+- 💾 **Persistent Chat History** - All conversations saved locally and survive page refresh
+- 📁 **Multiple Conversations** - Create and manage multiple chat sessions
+- ⏰ **Message Timestamps** - Every message includes a timestamp
+- 📋 **Copy Messages** - Easily copy any message to clipboard
+- 📤 **Export Conversations** - Download conversations as text files
+- ✏️ **Editable Titles** - Click conversation titles to rename them
+- 🗂️ **Smart Sidebar** - Collapsible sidebar with conversation list and metadata
 
 ## Getting Started
 
@@ -23,7 +30,9 @@
 |----------|--------|
 | `Enter` | Send message |
 | `Shift+Enter` | New line in message |
-| `Ctrl+L` | Clear chat |
+| `Ctrl+N` | New conversation |
+| `Ctrl+D` | Delete current conversation |
+| `Ctrl+L` | Clear current chat |
 | `Ctrl+K` | Focus input |
 | `Ctrl+,` | Open settings |
 | `?` | Show keyboard shortcuts help |
@@ -41,6 +50,17 @@
 ## Design Philosophy
 
 Pro-Chat is designed for developers and power users who prefer keyboard-driven workflows. Every feature is accessible without touching the mouse, and the UI stays out of your way while you focus on the conversation.
+
+All conversations are automatically saved to your browser's local storage, so you can pick up where you left off. The sidebar provides quick access to all your conversations, with metadata showing message counts and last update times.
+
+## Usage Tips
+
+- **Create multiple conversations** for different topics or projects
+- **Click on conversation titles** to rename them for better organization
+- **Use the sidebar toggle** to maximize chat space when needed
+- **Export important conversations** to keep permanent records
+- **Hover over messages** to reveal the copy button for quick copying
+- **Use keyboard shortcuts** for maximum efficiency
 
 ## Browser Support
 
