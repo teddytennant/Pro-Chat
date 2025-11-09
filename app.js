@@ -4,9 +4,55 @@
 class ProChat {
     constructor() {
         this.messages = [];
-        this.apiKey = localStorage.getItem('openai_api_key') || '';
-        this.model = localStorage.getItem('openai_model') || 'gpt-4';
+        this.apiKey = localStorage.getItem('ai_api_key') || '';
+        this.model = localStorage.getItem('ai_model') || 'grok-beta';
         this.isLoading = false;
+        
+        // Provider configuration
+        this.providers = {
+            'grok': {
+                name: 'Grok',
+                endpoint: 'https://api.x.ai/v1/chat/completions',
+                models: ['grok-beta', 'grok-vision-beta'],
+                type: 'openai-compatible'
+            },
+            'claude': {
+                name: 'Claude',
+                endpoint: 'https://api.anthropic.com/v1/messages',
+                models: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
+                type: 'anthropic'
+            },
+            'kimi': {
+                name: 'Kimi',
+                endpoint: 'https://api.moonshot.cn/v1/chat/completions',
+                models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
+                type: 'openai-compatible'
+            },
+            'minimax': {
+                name: 'Minimax',
+                endpoint: 'https://api.minimax.chat/v1/text/chatcompletion_v2',
+                models: ['abab6.5-chat', 'abab6.5s-chat', 'abab5.5-chat'],
+                type: 'minimax'
+            },
+            'qwen': {
+                name: 'Qwen',
+                endpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
+                models: ['qwen-turbo', 'qwen-plus', 'qwen-max'],
+                type: 'qwen'
+            },
+            'deepseek': {
+                name: 'DeepSeek',
+                endpoint: 'https://api.deepseek.com/chat/completions',
+                models: ['deepseek-chat', 'deepseek-coder'],
+                type: 'openai-compatible'
+            },
+            'gemini': {
+                name: 'Gemini',
+                endpoint: 'https://generativelanguage.googleapis.com/v1beta/models',
+                models: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.0-pro'],
+                type: 'gemini'
+            }
+        };
         
         this.elements = {
             chatContainer: document.getElementById('chat-container'),
@@ -156,9 +202,9 @@ class ProChat {
         this.model = this.elements.modelSelect.value;
         
         if (this.apiKey) {
-            localStorage.setItem('openai_api_key', this.apiKey);
+            localStorage.setItem('ai_api_key', this.apiKey);
         }
-        localStorage.setItem('openai_model', this.model);
+        localStorage.setItem('ai_model', this.model);
         
         this.elements.modelInfo.textContent = this.model.toUpperCase();
         this.elements.settingsModal.classList.remove('active');
@@ -199,7 +245,7 @@ class ProChat {
         const loadingMsgId = this.addMessage('assistant', '', true);
         
         try {
-            const response = await this.callOpenAI(message);
+            const response = await this.callAI(message);
             
             // Remove loading message
             const loadingMsg = document.querySelector(`[data-message-id="${loadingMsgId}"]`);
@@ -227,7 +273,18 @@ class ProChat {
         }
     }
     
-    async callOpenAI(message) {
+    getProviderForModel(model) {
+        for (const [key, provider] of Object.entries(this.providers)) {
+            if (provider.models.includes(model)) {
+                return { key, ...provider };
+            }
+        }
+        throw new Error(`Unknown model: ${model}`);
+    }
+    
+    async callAI(message) {
+        const provider = this.getProviderForModel(this.model);
+        
         // Build conversation history
         const messages = [
             { role: 'system', content: 'You are a helpful AI assistant. Provide clear, concise responses suitable for technical users.' },
@@ -238,7 +295,24 @@ class ProChat {
             { role: 'user', content: message }
         ];
         
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        switch (provider.type) {
+            case 'openai-compatible':
+                return await this.callOpenAICompatible(provider, messages);
+            case 'anthropic':
+                return await this.callAnthropic(provider, messages);
+            case 'gemini':
+                return await this.callGemini(provider, messages);
+            case 'qwen':
+                return await this.callQwen(provider, messages);
+            case 'minimax':
+                return await this.callMinimax(provider, messages);
+            default:
+                throw new Error(`Unsupported provider type: ${provider.type}`);
+        }
+    }
+    
+    async callOpenAICompatible(provider, messages) {
+        const response = await fetch(provider.endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -254,7 +328,121 @@ class ProChat {
         
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.error?.message || 'API request failed');
+            throw new Error(error.error?.message || `API request failed with status ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data.choices[0].message.content;
+    }
+    
+    async callAnthropic(provider, messages) {
+        // Anthropic API requires system message separate
+        const systemMessage = messages.find(m => m.role === 'system');
+        const conversationMessages = messages.filter(m => m.role !== 'system');
+        
+        const response = await fetch(provider.endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': this.apiKey,
+                'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+                model: this.model,
+                max_tokens: 2000,
+                system: systemMessage ? systemMessage.content : undefined,
+                messages: conversationMessages
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || `API request failed with status ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data.content[0].text;
+    }
+    
+    async callGemini(provider, messages) {
+        // Gemini uses a different format
+        const contents = messages.filter(m => m.role !== 'system').map(msg => ({
+            role: msg.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: msg.content }]
+        }));
+        
+        const systemInstruction = messages.find(m => m.role === 'system');
+        
+        const response = await fetch(`${provider.endpoint}/${this.model}:generateContent?key=${this.apiKey}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                contents: contents,
+                systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction.content }] } : undefined,
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: 2000
+                }
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || `API request failed with status ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data.candidates[0].content.parts[0].text;
+    }
+    
+    async callQwen(provider, messages) {
+        const response = await fetch(provider.endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.apiKey}`
+            },
+            body: JSON.stringify({
+                model: this.model,
+                input: {
+                    messages: messages
+                },
+                parameters: {
+                    temperature: 0.7,
+                    max_tokens: 2000
+                }
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || `API request failed with status ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data.output.text;
+    }
+    
+    async callMinimax(provider, messages) {
+        const response = await fetch(provider.endpoint, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.apiKey}`
+            },
+            body: JSON.stringify({
+                model: this.model,
+                messages: messages,
+                temperature: 0.7,
+                max_tokens: 2000
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.base_resp?.status_msg || `API request failed with status ${response.status}`);
         }
         
         const data = await response.json();

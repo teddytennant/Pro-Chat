@@ -7,15 +7,17 @@
 - 🎨 **Clean & Minimal Design** - Dark theme with monospace fonts
 - ⌨️ **Full Keyboard Navigation** - Every action accessible via keyboard
 - 🚀 **Lightweight** - Vanilla JavaScript, no frameworks or dependencies
-- 🔒 **Privacy-Focused** - API key stored locally, never sent anywhere except OpenAI
+- 🔒 **Privacy-Focused** - API key stored locally, never sent anywhere except your chosen AI provider
 - ⚡ **Fast & Responsive** - Optimized for speed and efficiency
+- 🤖 **Multiple AI Providers** - Support for Grok, Claude, Kimi, Minimax, Qwen, DeepSeek, and Gemini
 
 ## Getting Started
 
 1. Open `index.html` in your web browser
 2. Press `Ctrl+,` (or `Cmd+,` on Mac) to open settings
-3. Enter your OpenAI API key
-4. Start chatting!
+3. Select your preferred AI model
+4. Enter your API key for the chosen provider
+5. Start chatting!
 
 ## Keyboard Shortcuts
 
@@ -36,7 +38,7 @@
 - HTML5
 - CSS3 (with CSS variables for theming)
 - Vanilla JavaScript (ES6+)
-- OpenAI API
+- Multiple AI Provider APIs (Grok, Claude, Kimi, Minimax, Qwen, DeepSeek, Gemini)
 
 ## Design Philosophy
 

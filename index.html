@@ -41,7 +41,7 @@
         
         <div class="status-bar">
             <span id="status" class="status-text">Ready</span>
-            <span id="model-info" class="model-info">GPT-4</span>
+            <span id="model-info" class="model-info">GROK-BETA</span>
         </div>
     </div>
     
@@ -92,22 +92,52 @@
             <h2 id="settings-title">Settings</h2>
             <div class="settings-form">
                 <div class="form-group">
-                    <label for="api-key">OpenAI API Key:</label>
+                    <label for="api-key">API Key:</label>
                     <input 
                         type="password" 
                         id="api-key" 
                         class="form-input" 
-                        placeholder="sk-..."
-                        aria-label="OpenAI API Key"
+                        placeholder="Enter your API key..."
+                        aria-label="API Key"
                     >
-                    <small>Your API key is stored locally and never sent anywhere except OpenAI.</small>
+                    <small>Your API key is stored locally and only sent to the selected AI provider.</small>
                 </div>
                 <div class="form-group">
                     <label for="model-select">Model:</label>
                     <select id="model-select" class="form-input" aria-label="Select AI model">
-                        <option value="gpt-4">GPT-4</option>
-                        <option value="gpt-4-turbo-preview">GPT-4 Turbo</option>
-                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                        <optgroup label="Grok (xAI)">
+                            <option value="grok-beta">Grok Beta</option>
+                            <option value="grok-vision-beta">Grok Vision Beta</option>
+                        </optgroup>
+                        <optgroup label="Claude (Anthropic)">
+                            <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+                            <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
+                            <option value="claude-3-opus-20240229">Claude 3 Opus</option>
+                        </optgroup>
+                        <optgroup label="Kimi (Moonshot AI)">
+                            <option value="moonshot-v1-8k">Kimi v1 8K</option>
+                            <option value="moonshot-v1-32k">Kimi v1 32K</option>
+                            <option value="moonshot-v1-128k">Kimi v1 128K</option>
+                        </optgroup>
+                        <optgroup label="Minimax">
+                            <option value="abab6.5-chat">Abab 6.5 Chat</option>
+                            <option value="abab6.5s-chat">Abab 6.5s Chat</option>
+                            <option value="abab5.5-chat">Abab 5.5 Chat</option>
+                        </optgroup>
+                        <optgroup label="Qwen (Alibaba)">
+                            <option value="qwen-turbo">Qwen Turbo</option>
+                            <option value="qwen-plus">Qwen Plus</option>
+                            <option value="qwen-max">Qwen Max</option>
+                        </optgroup>
+                        <optgroup label="DeepSeek">
+                            <option value="deepseek-chat">DeepSeek Chat</option>
+                            <option value="deepseek-coder">DeepSeek Coder</option>
+                        </optgroup>
+                        <optgroup label="Gemini (Google)">
+                            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                            <option value="gemini-1.0-pro">Gemini 1.0 Pro</option>
+                        </optgroup>
                     </select>
                 </div>
                 <button id="save-settings" class="btn btn-primary">Save Settings</button>
