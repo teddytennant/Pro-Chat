@@ -590,20 +590,20 @@ function App() {
                   <select
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
-                    className="w-full p-3 bg-black border border-zinc-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-white focus:border-white transition-all duration-200 text-white"
+                    className="w-full p-3 bg-neutral-800 border border-neutral-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-neutral-600 focus:border-neutral-600 transition-all duration-200 text-neutral-100 cursor-pointer hover:bg-neutral-750 appearance-none bg-[url('data:image/svg+xml;charset=UTF-8,%3csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2020%2020%22%20fill=%22none%22%3e%3cpath%20d=%22M7%207l3%203%203-3%22%20stroke=%22%239CA3AF%22%20stroke-width=%221.5%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22/%3e%3c/svg%3e')] bg-[position:right_0.75rem_center] bg-[size:1.25rem] bg-no-repeat pr-10"
                   >
-                    <option value="x-ai/grok-4">Grok 4</option>
-                    <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
-                    <option value="anthropic/claude-sonnet-4.5">Claude Sonnet 4.5</option>
-                    <option value="anthropic/claude-opus-4.1">Claude Opus 4.1</option>
-                    <option value="moonshot/kimi-k2-thinking">Kimi K2 Thinking</option>
-                    <option value="minimax/minimax-m2">MiniMax M2</option>
-                    <option value="x-ai/grok-4-fast">Grok 4 Fast</option>
-                    <option value="deepseek/deepseek-r1">DeepSeek R1</option>
-                    <option value="deepseek/deepseek-v3">DeepSeek V3</option>
-                    <option value="qwen/qwen-3">Qwen 3</option>
-                    <option value="qwen/qwen-3-max">Qwen 3 Max</option>
-                    <option value="qwen/qwen-3-vl">Qwen 3 VL</option>
+                    <option value="x-ai/grok-4" className="bg-neutral-800 text-neutral-100 py-2">Grok 4</option>
+                    <option value="google/gemini-2.5-pro" className="bg-neutral-800 text-neutral-100 py-2">Gemini 2.5 Pro</option>
+                    <option value="anthropic/claude-sonnet-4.5" className="bg-neutral-800 text-neutral-100 py-2">Claude Sonnet 4.5</option>
+                    <option value="anthropic/claude-opus-4.1" className="bg-neutral-800 text-neutral-100 py-2">Claude Opus 4.1</option>
+                    <option value="moonshot/kimi-k2-thinking" className="bg-neutral-800 text-neutral-100 py-2">Kimi K2 Thinking</option>
+                    <option value="minimax/minimax-m2" className="bg-neutral-800 text-neutral-100 py-2">MiniMax M2</option>
+                    <option value="x-ai/grok-4-fast" className="bg-neutral-800 text-neutral-100 py-2">Grok 4 Fast</option>
+                    <option value="deepseek/deepseek-r1" className="bg-neutral-800 text-neutral-100 py-2">DeepSeek R1</option>
+                    <option value="deepseek/deepseek-v3" className="bg-neutral-800 text-neutral-100 py-2">DeepSeek V3</option>
+                    <option value="qwen/qwen-3" className="bg-neutral-800 text-neutral-100 py-2">Qwen 3</option>
+                    <option value="qwen/qwen-3-max" className="bg-neutral-800 text-neutral-100 py-2">Qwen 3 Max</option>
+                    <option value="qwen/qwen-3-vl" className="bg-neutral-800 text-neutral-100 py-2">Qwen 3 VL</option>
                   </select>
                 </div>
                 <div>
