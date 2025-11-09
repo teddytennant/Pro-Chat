@@ -315,38 +315,38 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-900 text-gray-100 overflow-hidden">
+    <div className="flex h-screen bg-neutral-900 text-neutral-100 overflow-hidden">
       {/* Sidebar */}
-      <div className={`${sidebarOpen ? 'w-64' : 'w-0'} transition-all duration-300 bg-gray-800 text-gray-100 flex flex-col overflow-hidden border-r border-gray-700`}>
+      <div className={`${sidebarOpen ? 'w-64' : 'w-0'} transition-all duration-300 bg-neutral-800 text-neutral-100 flex flex-col overflow-hidden border-r border-neutral-700`}>
         <div className="p-3 flex items-center justify-between">
           <button
             onClick={createNewChat}
-            className="flex-1 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 rounded-lg transition-all duration-200 flex items-center justify-center space-x-2 text-sm font-medium"
+            className="flex-1 px-4 py-2.5 bg-neutral-700 hover:bg-neutral-600 rounded-lg transition-all duration-200 flex items-center justify-center space-x-2 text-sm font-medium"
             title="New Chat (Ctrl+N)"
           >
             <span>New chat</span>
           </button>
         </div>
         
-        <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1 scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+        <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1 scrollbar-thin scrollbar-thumb-neutral-700 scrollbar-track-transparent">
           {chats.map(chat => (
             <div
               key={chat.id}
               onClick={() => switchChat(chat.id)}
               className={`px-3 py-2.5 rounded-lg cursor-pointer group flex items-center justify-between transition-all duration-150 ${
                 currentChatId === chat.id 
-                  ? 'bg-gray-700' 
-                  : 'hover:bg-gray-700/50'
+                  ? 'bg-neutral-700' 
+                  : 'hover:bg-neutral-700/50'
               }`}
             >
               <div className="flex-1 min-w-0 flex items-center space-x-2">
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-gray-200 truncate">{chat.title}</div>
+                  <div className="text-sm text-neutral-200 truncate">{chat.title}</div>
                 </div>
               </div>
               <button
                 onClick={(e) => deleteChat(chat.id, e)}
-                className="opacity-0 group-hover:opacity-100 px-2 py-1 hover:bg-gray-600 rounded transition-all ml-1 text-gray-400 text-sm"
+                className="opacity-0 group-hover:opacity-100 px-2 py-1 hover:bg-neutral-600 rounded transition-all ml-1 text-neutral-400 text-sm"
               >
                 ×
               </button>
@@ -354,16 +354,16 @@ function App() {
           ))}
           
           {chats.length === 0 && (
-            <div className="text-center text-gray-500 text-sm py-8 px-4">
+            <div className="text-center text-neutral-500 text-sm py-8 px-4">
               No previous chats
             </div>
           )}
         </div>
 
-        <div className="p-3 border-t border-gray-700">
+        <div className="p-3 border-t border-neutral-700">
           <button
             onClick={() => setShowSettings(true)}
-            className="w-full px-3 py-2.5 hover:bg-gray-700 rounded-lg transition-all duration-200 flex items-center justify-center text-sm"
+            className="w-full px-3 py-2.5 hover:bg-neutral-700 rounded-lg transition-all duration-200 flex items-center justify-center text-sm"
           >
             <span>Settings</span>
           </button>
@@ -371,24 +371,24 @@ function App() {
       </div>
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col bg-gray-900">
+      <div className="flex-1 flex flex-col bg-neutral-900">
         {/* Header */}
-        <header className="border-b border-gray-700 bg-gray-800/80 backdrop-blur-lg sticky top-0 z-10">
+        <header className="border-b border-neutral-700 bg-neutral-800/80 backdrop-blur-lg sticky top-0 z-10">
           <div className="max-w-4xl mx-auto px-4 h-14 flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => setSidebarOpen(prev => !prev)}
-                className="px-3 py-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-200 font-medium"
+                className="px-3 py-2 hover:bg-neutral-700 rounded-lg transition-colors text-neutral-200 font-medium"
                 title="Toggle Sidebar (Ctrl+B)"
               >
                 ☰
               </button>
-              <h1 className="text-lg font-semibold text-gray-100">Pro-Chat</h1>
+              <h1 className="text-lg font-semibold text-neutral-100">Pro-Chat</h1>
             </div>
             <div className="flex items-center space-x-1">
               <button
                 onClick={() => setShowShortcuts(true)}
-                className="px-3 py-2 hover:bg-gray-700 rounded-lg transition-colors text-gray-200 font-medium"
+                className="px-3 py-2 hover:bg-neutral-700 rounded-lg transition-colors text-neutral-200 font-medium"
                 title="Keyboard Shortcuts (?)"
               >
                 ?
@@ -398,17 +398,17 @@ function App() {
         </header>
 
         {/* Chat Container */}
-        <div className="flex-1 overflow-hidden bg-gray-900">
+        <div className="flex-1 overflow-hidden bg-neutral-900">
           <div
             ref={chatContainerRef}
-            className="h-full overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
+            className="h-full overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-300 scrollbar-track-transparent"
           >
             <div className="max-w-3xl mx-auto px-4">
               {messages.length === 0 ? (
                 <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
                   <div className="text-center max-w-md">
-                    <h2 className="text-3xl font-semibold text-gray-100 mb-3">How can I help you today?</h2>
-                    <p className="text-gray-400">
+                    <h2 className="text-3xl font-semibold text-neutral-100 mb-3">How can I help you today?</h2>
+                    <p className="text-neutral-400">
                       Start a conversation by typing a message below
                     </p>
                   </div>
@@ -417,16 +417,16 @@ function App() {
                 <div className="py-8 space-y-6">
                   {messages.map((msg, index) => (
                     <div key={index} className="group">
-                      <div className={`flex items-start space-x-4 ${msg.role === 'user' ? '' : 'bg-gray-800 -mx-4 px-4 py-6'}`}>
+                      <div className={`flex items-start space-x-4 ${msg.role === 'user' ? '' : 'bg-neutral-800 -mx-4 px-4 py-6'}`}>
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-sm font-semibold ${
                           msg.role === 'user' 
-                            ? 'bg-gray-700 text-gray-100' 
-                            : 'bg-gray-600 text-gray-100'
+                            ? 'bg-neutral-700 text-neutral-100' 
+                            : 'bg-neutral-600 text-neutral-100'
                         }`}>
                           {msg.role === 'user' ? 'Y' : 'AI'}
                         </div>
                         <div className="flex-1 min-w-0 pt-1">
-                          <div className="text-[15px] leading-7 text-gray-100 whitespace-pre-wrap break-words">
+                          <div className="text-[15px] leading-7 text-neutral-100 whitespace-pre-wrap break-words">
                             {msg.content}
                           </div>
                         </div>
@@ -436,17 +436,17 @@ function App() {
                 </div>
               )}
               {isLoading && (
-                <div className="py-6 bg-gray-800 -mx-4 px-4">
+                <div className="py-6 bg-neutral-800 -mx-4 px-4">
                   <div className="flex items-start space-x-4">
-                    <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center text-sm font-semibold text-gray-100">
+                    <div className="w-8 h-8 rounded-full bg-neutral-600 flex items-center justify-center text-sm font-semibold text-neutral-100">
                       AI
                     </div>
                     <div className="flex-1 pt-1">
                       <div className="flex items-center space-x-2">
                         <div className="flex space-x-1">
-                          <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
-                          <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '0.15s'}}></div>
-                          <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '0.3s'}}></div>
+                          <div className="w-2 h-2 bg-neutral-500 rounded-full animate-bounce"></div>
+                          <div className="w-2 h-2 bg-neutral-500 rounded-full animate-bounce" style={{animationDelay: '0.15s'}}></div>
+                          <div className="w-2 h-2 bg-neutral-500 rounded-full animate-bounce" style={{animationDelay: '0.3s'}}></div>
                         </div>
                       </div>
                     </div>
@@ -459,7 +459,7 @@ function App() {
         </div>
 
         {/* Input Area */}
-        <div className="border-t border-gray-700 bg-gray-800">
+        <div className="border-t border-neutral-700 bg-neutral-800">
           <div className="max-w-3xl mx-auto px-4 py-6">
             <div className="relative">
               <textarea
@@ -472,7 +472,7 @@ function App() {
                     sendMessage()
                   }
                 }}
-                className="w-full px-4 py-3 pr-12 bg-gray-700 border border-gray-600 rounded-2xl resize-none focus:outline-none focus:border-gray-500 focus:ring-1 focus:ring-gray-500 transition-all duration-200 placeholder-gray-400 text-gray-100 shadow-sm"
+                className="w-full px-4 py-3 pr-12 bg-neutral-700 border border-neutral-600 rounded-2xl resize-none focus:outline-none focus:border-neutral-500 focus:ring-1 focus:ring-neutral-500 transition-all duration-200 placeholder-neutral-400 text-neutral-100 shadow-sm"
                 placeholder="Message Pro-Chat..."
                 rows={1}
                 style={{minHeight: '52px', maxHeight: '200px'}}
@@ -481,20 +481,20 @@ function App() {
               <button
                 onClick={sendMessage}
                 disabled={isLoading || !inputValue.trim()}
-                className="absolute right-3 bottom-3 w-10 h-10 bg-gray-600 hover:bg-gray-500 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-full transition-all duration-200 flex items-center justify-center text-xl font-bold"
+                className="absolute right-3 bottom-3 w-10 h-10 bg-neutral-600 hover:bg-neutral-500 disabled:bg-neutral-700 disabled:cursor-not-allowed rounded-full transition-all duration-200 flex items-center justify-center text-xl font-bold"
                 title="Send message"
               >
-                <span className={isLoading || !inputValue.trim() ? 'text-gray-500' : 'text-gray-100'}>↑</span>
+                <span className={isLoading || !inputValue.trim() ? 'text-neutral-500' : 'text-neutral-100'}>↑</span>
               </button>
             </div>
-            <div className="mt-2 flex items-center justify-between text-xs text-gray-400">
+            <div className="mt-2 flex items-center justify-between text-xs text-neutral-400">
               <div className="flex items-center space-x-3">
                 <span>{model.split('/').pop()?.toUpperCase()}</span>
               </div>
               <div className="flex items-center space-x-2">
-                <kbd className="px-2 py-1 bg-gray-100 border border-gray-200 rounded text-xs font-mono">Enter</kbd>
+                <kbd className="px-2 py-1 bg-neutral-100 border border-neutral-200 rounded text-xs font-mono">Enter</kbd>
                 <span>to send</span>
-                <kbd className="px-2 py-1 bg-gray-100 border border-gray-200 rounded text-xs font-mono">Shift+Enter</kbd>
+                <kbd className="px-2 py-1 bg-neutral-100 border border-neutral-200 rounded text-xs font-mono">Shift+Enter</kbd>
                 <span>for new line</span>
               </div>
             </div>
@@ -510,7 +510,7 @@ function App() {
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-semibold text-white">Keyboard Shortcuts</h2>
                 <button 
-                  className="text-gray-400 hover:text-white transition-colors duration-200 text-2xl"
+                  className="text-neutral-400 hover:text-white transition-colors duration-200 text-2xl"
                   onClick={() => setShowShortcuts(false)}
                 >
                   ×
@@ -518,39 +518,39 @@ function App() {
               </div>
               <div className="space-y-3">
                 <div className="flex items-center justify-between py-2">
-                  <span className="text-gray-300">Show help</span>
+                  <span className="text-neutral-300">Show help</span>
                   <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs font-mono">?</kbd>
                 </div>
                 <div className="flex items-center justify-between py-2">
-                  <span className="text-gray-300">Focus input</span>
+                  <span className="text-neutral-300">Focus input</span>
                   <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs font-mono">Ctrl+K</kbd>
                 </div>
                 <div className="flex items-center justify-between py-2">
-                  <span className="text-gray-300">New chat</span>
+                  <span className="text-neutral-300">New chat</span>
                   <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs font-mono">Ctrl+N</kbd>
                 </div>
                 <div className="flex items-center justify-between py-2">
-                  <span className="text-gray-300">Clear chat</span>
+                  <span className="text-neutral-300">Clear chat</span>
                   <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs font-mono">Ctrl+L</kbd>
                 </div>
                 <div className="flex items-center justify-between py-2">
-                  <span className="text-gray-300">Toggle sidebar</span>
+                  <span className="text-neutral-300">Toggle sidebar</span>
                   <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs font-mono">Ctrl+B</kbd>
                 </div>
                 <div className="flex items-center justify-between py-2">
-                  <span className="text-gray-300">Open settings</span>
+                  <span className="text-neutral-300">Open settings</span>
                   <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs font-mono">Ctrl+,</kbd>
                 </div>
                 <div className="flex items-center justify-between py-2">
-                  <span className="text-gray-300">Send message</span>
+                  <span className="text-neutral-300">Send message</span>
                   <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs font-mono">Enter</kbd>
                 </div>
                 <div className="flex items-center justify-between py-2">
-                  <span className="text-gray-300">New line</span>
+                  <span className="text-neutral-300">New line</span>
                   <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs font-mono">Shift+Enter</kbd>
                 </div>
                 <div className="flex items-center justify-between py-2">
-                  <span className="text-gray-300">Close modal</span>
+                  <span className="text-neutral-300">Close modal</span>
                   <kbd className="px-2 py-1 bg-zinc-800 border border-zinc-700 rounded text-xs font-mono">Escape</kbd>
                 </div>
               </div>
@@ -567,7 +567,7 @@ function App() {
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-semibold text-white">Settings</h2>
                 <button 
-                  className="text-gray-400 hover:text-white transition-colors duration-200 text-2xl"
+                  className="text-neutral-400 hover:text-white transition-colors duration-200 text-2xl"
                   onClick={() => setShowSettings(false)}
                 >
                   ×
@@ -575,18 +575,18 @@ function App() {
               </div>
               <div className="space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">OpenRouter API Key</label>
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">OpenRouter API Key</label>
                   <input
                     type="password"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
-                    className="w-full p-3 bg-black border border-zinc-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-white focus:border-white transition-all duration-200 placeholder-gray-600 text-white"
+                    className="w-full p-3 bg-black border border-zinc-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-white focus:border-white transition-all duration-200 placeholder-neutral-600 text-white"
                     placeholder="sk-or-v1-..."
                   />
-                  <p className="text-xs text-gray-500 mt-1">Your API key is stored locally and only sent to OpenRouter. Get your key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:underline">openrouter.ai/keys</a></p>
+                  <p className="text-xs text-neutral-500 mt-1">Your API key is stored locally and only sent to OpenRouter. Get your key at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-neutral-400 hover:underline">openrouter.ai/keys</a></p>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Model</label>
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">Model</label>
                   <select
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
@@ -609,8 +609,8 @@ function App() {
                 <div>
                   <label className="flex items-center justify-between cursor-pointer">
                     <div>
-                      <div className="text-sm font-medium text-gray-300">Context</div>
-                      <p className="text-xs text-gray-500 mt-0.5">Remember conversation history within each chat</p>
+                      <div className="text-sm font-medium text-neutral-300">Context</div>
+                      <p className="text-xs text-neutral-500 mt-0.5">Remember conversation history within each chat</p>
                     </div>
                     <div className="relative">
                       <input
@@ -619,15 +619,15 @@ function App() {
                         onChange={(e) => setContextEnabled(e.target.checked)}
                         className="sr-only peer"
                       />
-                      <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-white rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-white"></div>
+                      <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-white rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-white"></div>
                     </div>
                   </label>
                 </div>
                 <div>
                   <label className="flex items-center justify-between cursor-pointer">
                     <div>
-                      <div className="text-sm font-medium text-gray-300">Memory</div>
-                      <p className="text-xs text-gray-500 mt-0.5">Save chat history across sessions</p>
+                      <div className="text-sm font-medium text-neutral-300">Memory</div>
+                      <p className="text-xs text-neutral-500 mt-0.5">Save chat history across sessions</p>
                     </div>
                     <div className="relative">
                       <input
@@ -636,13 +636,13 @@ function App() {
                         onChange={(e) => setMemoryEnabled(e.target.checked)}
                         className="sr-only peer"
                       />
-                      <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-white rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-white"></div>
+                      <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-white rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-white"></div>
                     </div>
                   </label>
                 </div>
                 <button
                   onClick={saveSettings}
-                  className="w-full px-4 py-3 bg-white text-black hover:bg-gray-200 rounded-lg font-medium transition-all duration-200"
+                  className="w-full px-4 py-3 bg-white text-black hover:bg-neutral-200 rounded-lg font-medium transition-all duration-200"
                 >
                   Save Settings
                 </button>
