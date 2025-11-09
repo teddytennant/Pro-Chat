@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 function App() {
   const [messages, setMessages] = useState([])
   const [apiKey, setApiKey] = useState(localStorage.getItem('openrouter_api_key') || '')
-  const [model, setModel] = useState(localStorage.getItem('openrouter_model') || 'x-ai/grok-2-1212')
+  const [model, setModel] = useState(localStorage.getItem('openrouter_model') || 'x-ai/grok-4')
   const [isLoading, setIsLoading] = useState(false)
   const [status, setStatus] = useState({ state: 'ready', text: 'Ready' })
   const [showShortcuts, setShowShortcuts] = useState(false)
@@ -369,18 +369,18 @@ function App() {
                     onChange={(e) => setModel(e.target.value)}
                     className="w-full p-3 bg-slate-700/50 backdrop-blur-sm border border-slate-600/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400/50 transition-all duration-200"
                   >
-                    <option value="x-ai/grok-2-1212">Grok 2 (1212)</option>
-                    <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash (Free)</option>
-                    <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                    <option value="anthropic/claude-opus-4-20250514">Claude Opus 4</option>
-                    <option value="moonshot/moonshot-v1-128k">Kimi (Moonshot v1 128k)</option>
-                    <option value="minimax/minimax-01">MiniMax-01</option>
-                    <option value="x-ai/grok-beta">Grok Beta</option>
+                    <option value="x-ai/grok-4">Grok 4</option>
+                    <option value="google/gemini-2.5-pro">Gemini 2.5 Pro</option>
+                    <option value="anthropic/claude-sonnet-4.5">Claude Sonnet 4.5</option>
+                    <option value="anthropic/claude-opus-4.1">Claude Opus 4.1</option>
+                    <option value="moonshot/kimi-k2-thinking">Kimi K2 Thinking</option>
+                    <option value="minimax/minimax-m2">MiniMax M2</option>
+                    <option value="x-ai/grok-4-fast">Grok 4 Fast</option>
                     <option value="deepseek/deepseek-r1">DeepSeek R1</option>
-                    <option value="deepseek/deepseek-chat">DeepSeek V3</option>
-                    <option value="qwen/qwen-2.5-72b-instruct">Qwen 2.5 72B</option>
-                    <option value="qwen/qwq-32b-preview">Qwen QwQ 32B</option>
-                    <option value="qwen/qwen-2-vl-72b-instruct">Qwen 2 VL 72B</option>
+                    <option value="deepseek/deepseek-v3">DeepSeek V3</option>
+                    <option value="qwen/qwen-3">Qwen 3</option>
+                    <option value="qwen/qwen-3-max">Qwen 3 Max</option>
+                    <option value="qwen/qwen-3-vl">Qwen 3 VL</option>
                   </select>
                 </div>
                 <button
