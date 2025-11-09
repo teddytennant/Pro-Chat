@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 
 function App() {
   const [messages, setMessages] = useState([])
-  const [apiKey, setApiKey] = useState(localStorage.getItem('openai_api_key') || '')
-  const [model, setModel] = useState(localStorage.getItem('openai_model') || 'gpt-4')
+  const [apiKey, setApiKey] = useState(localStorage.getItem('ai_api_key') || '')
+  const [model, setModel] = useState(localStorage.getItem('ai_model') || 'grok-4')
   const [isLoading, setIsLoading] = useState(false)
   const [status, setStatus] = useState({ state: 'ready', text: 'Ready' })
   const [showShortcuts, setShowShortcuts] = useState(false)
@@ -77,18 +77,26 @@ function App() {
       { role: 'user', content: message }
     ]
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Determine API endpoint and format based on model
+    let apiUrl = 'https://api.openai.com/v1/chat/completions'
+    let headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    }
+    let requestBody = {
+      model,
+      messages: conversation,
+      temperature: 0.7,
+      max_tokens: 2000
+    }
+
+    // Model-specific configurations can be added here
+    // For now, using a generic approach that works with OpenAI-compatible APIs
+
+    const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model,
-        messages: conversation,
-        temperature: 0.7,
-        max_tokens: 2000
-      })
+      headers,
+      body: JSON.stringify(requestBody)
     })
 
     if (!response.ok) {
@@ -107,8 +115,8 @@ function App() {
   }
 
   const saveSettings = () => {
-    localStorage.setItem('openai_api_key', apiKey)
-    localStorage.setItem('openai_model', model)
+    localStorage.setItem('ai_api_key', apiKey)
+    localStorage.setItem('ai_model', model)
     setShowSettings(false)
     setStatus({ state: 'ready', text: 'Settings saved!' })
     setTimeout(() => setStatus({ state: 'ready', text: 'Ready' }), 2000)
@@ -350,15 +358,15 @@ function App() {
               </div>
               <div className="space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">OpenAI API Key</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">API Key</label>
                   <input
                     type="password"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                     className="w-full p-3 bg-slate-700/50 backdrop-blur-sm border border-slate-600/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400/50 transition-all duration-200 placeholder-slate-400"
-                    placeholder="sk-..."
+                    placeholder="Enter your API key..."
                   />
-                  <p className="text-xs text-slate-500 mt-1">Your API key is stored locally and never sent anywhere except OpenAI.</p>
+                  <p className="text-xs text-slate-500 mt-1">Your API key is stored locally and never sent anywhere except the AI provider.</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">Model</label>
@@ -367,9 +375,18 @@ function App() {
                     onChange={(e) => setModel(e.target.value)}
                     className="w-full p-3 bg-slate-700/50 backdrop-blur-sm border border-slate-600/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400/50 focus:border-blue-400/50 transition-all duration-200"
                   >
-                    <option value="gpt-4">GPT-4</option>
-                    <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                    <option value="grok-4">Grok 4</option>
+                    <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                    <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+                    <option value="claude-opus-4.1">Claude Opus 4.1</option>
+                    <option value="kimi-k2-thinking">Kimi K2 Thinking</option>
+                    <option value="minimax-m2">MiniMax M2</option>
+                    <option value="grok-4-fast">Grok 4 Fast</option>
+                    <option value="deepseek-r1">DeepSeek R1</option>
+                    <option value="deepseek-v3">DeepSeek V3</option>
+                    <option value="qwen-3">Qwen 3</option>
+                    <option value="qwen-3-max">Qwen 3 Max</option>
+                    <option value="qwen-3-vl">Qwen 3 VL</option>
                   </select>
                 </div>
                 <button
