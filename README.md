@@ -1,6 +1,8 @@
 # Pro-Chat
 
-> A lightweight, super clean AI chat UI with full keyboard navigation. Built for techies.
+> A personal web development project exploring a lightweight AI chat UI with full keyboard navigation.
+>
+> ⚠️ **Note**: This was a learning project. For AI development workflows, I'd recommend using CLI tools like **Claude Code**, **Codex CLI**, or **OpenCode** instead, which provide better integration with your development environment.
 
 ## Features
 
