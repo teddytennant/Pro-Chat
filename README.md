@@ -33,7 +33,12 @@
 | `?` | Show keyboard shortcuts help |
 | `Esc` | Close modals / Focus input |
 | `Tab` | Navigate between elements |
+| `Shift+Tab` | Navigate backwards between elements |
 | `↑` / `↓` | Scroll chat (when chat is focused) |
+| `Home` / `End` | Jump to start/end of chat |
+| `Ctrl+A` | Select all text in input |
+| `Ctrl+Backspace` | Delete word in input |
+| `Alt+↑` / `Alt+↓` | Navigate message history |
 
 ## Tech Stack
 
