@@ -14,8 +14,8 @@
     "url": "git+https://github.com/teddytennant/Pro-Chat.git"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "Teddy Tennant",
+  "license": "MIT",
   "type": "module",
   "bugs": {
     "url": "https://github.com/teddytennant/Pro-Chat/issues"
