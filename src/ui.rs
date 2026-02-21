@@ -35,7 +35,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     // Draw overlay if active
     match &app.overlay {
-        Overlay::Help => draw_help_overlay(f, area),
+        Overlay::Help => draw_help_overlay(f, app, area),
         Overlay::History => draw_history_overlay(f, app, area),
         Overlay::Settings => draw_settings_overlay(f, app, area),
         Overlay::ToolConfirm => draw_tool_confirm_overlay(f, app, area),
@@ -44,6 +44,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 }
 
 fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
+    let c = app.colors();
+
     let messages_block = Block::default()
         .borders(Borders::NONE)
         .padding(Padding::horizontal(1));
@@ -53,7 +55,7 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
 
     if app.messages.is_empty() {
         // Welcome screen
-        let banner_style = Style::default().fg(Color::Rgb(122, 162, 247)).add_modifier(Modifier::BOLD);
+        let banner_style = Style::default().fg(c.accent).add_modifier(Modifier::BOLD);
         let welcome = vec![
             Line::from(""),
             Line::from(""),
@@ -66,12 +68,12 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
             Line::from(""),
             Line::from(Span::styled(
                 "Fast AI chat in your terminal",
-                Style::default().fg(Color::Rgb(86, 95, 137)),
+                Style::default().fg(c.dim),
             )),
             Line::from(""),
             Line::from(Span::styled(
                 "Type a message to start • ? for help • :q to quit",
-                Style::default().fg(Color::Rgb(59, 66, 97)),
+                Style::default().fg(c.border),
             )),
         ];
         let p = Paragraph::new(welcome).alignment(Alignment::Center);
@@ -86,9 +88,9 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
     for msg in &app.messages {
         // Role header
         let (label, color) = match msg.role.as_str() {
-            "user" => ("You", Color::Rgb(158, 206, 106)),
-            "assistant" => ("Assistant", Color::Rgb(187, 154, 247)),
-            _ => ("System", Color::Rgb(86, 95, 137)),
+            "user" => ("You", c.user_label),
+            "assistant" => ("Assistant", c.assistant_label),
+            _ => ("System", c.dim),
         };
 
         let local_time = msg.timestamp.with_timezone(&Local);
@@ -101,7 +103,7 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
             ),
             Span::styled(
                 time_str,
-                Style::default().fg(Color::Rgb(86, 95, 137)),
+                Style::default().fg(c.dim),
             ),
         ]));
 
@@ -169,9 +171,9 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
                 None => "…",
             };
             let status_color = match &inv.result {
-                Some(r) if r.success => Color::Rgb(158, 206, 106),
+                Some(r) if r.success => c.success,
                 Some(_) => Color::Rgb(247, 118, 142),
-                None => Color::Rgb(224, 175, 104),
+                None => c.warning,
             };
             all_lines.push(Line::from(vec![
                 Span::styled("  ", Style::default()),
@@ -181,11 +183,11 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
                 ),
                 Span::styled(
                     inv.tool_name.clone(),
-                    Style::default().fg(Color::Rgb(224, 175, 104)).add_modifier(Modifier::BOLD),
+                    Style::default().fg(c.warning).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     format!("  {}", inv.tool_args),
-                    Style::default().fg(Color::Rgb(86, 95, 137)),
+                    Style::default().fg(c.dim),
                 ),
             ]));
 
@@ -202,19 +204,19 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
                     for ol in show_lines {
                         all_lines.push(Line::from(Span::styled(
                             format!("    {ol}"),
-                            Style::default().fg(Color::Rgb(86, 95, 137)),
+                            Style::default().fg(c.dim),
                         )));
                     }
                     if output_lines.len() > max_lines {
                         all_lines.push(Line::from(Span::styled(
                             format!("    ... ({} more lines)", output_lines.len() - max_lines),
-                            Style::default().fg(Color::Rgb(59, 66, 97)),
+                            Style::default().fg(c.border),
                         )));
                     }
                 } else {
                     all_lines.push(Line::from(Span::styled(
                         format!("    ({} lines collapsed)", result.output.lines().count()),
-                        Style::default().fg(Color::Rgb(59, 66, 97)),
+                        Style::default().fg(c.border),
                     )));
                 }
             }
@@ -226,7 +228,7 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
             if msg.content.is_empty() && msg.tool_invocations.is_empty() {
                 all_lines.push(Line::from(Span::styled(
                     format!("  {frame} "),
-                    Style::default().fg(Color::Rgb(187, 154, 247)),
+                    Style::default().fg(c.assistant_label),
                 )));
             } else if !msg.content.is_empty() {
                 // Append spinner to the last line of streaming text
@@ -234,7 +236,7 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
                     let mut spans: Vec<Span> = last_line.spans.clone();
                     spans.push(Span::styled(
                         format!(" {frame}"),
-                        Style::default().fg(Color::Rgb(187, 154, 247)),
+                        Style::default().fg(c.assistant_label),
                     ));
                     *last_line = Line::from(spans);
                 }
@@ -265,7 +267,7 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
         );
         let scrollbar = Scrollbar::default()
             .orientation(ScrollbarOrientation::VerticalRight)
-            .style(Style::default().fg(Color::Rgb(59, 66, 97)));
+            .style(Style::default().fg(c.border));
         let mut state = ScrollbarState::new(total_lines)
             .position(app.scroll_offset);
         f.render_stateful_widget(scrollbar, scrollbar_area, &mut state);
@@ -273,11 +275,14 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn draw_input(f: &mut Frame, app: &App, area: Rect) {
+    let c = app.colors();
+    let dark_bg = Color::Rgb(26, 27, 38);
+
     let mode_indicator = match app.input_mode {
-        InputMode::Normal => Span::styled(" NOR ", Style::default().bg(Color::Rgb(122, 162, 247)).fg(Color::Rgb(26, 27, 38)).add_modifier(Modifier::BOLD)),
-        InputMode::Insert => Span::styled(" INS ", Style::default().bg(Color::Rgb(158, 206, 106)).fg(Color::Rgb(26, 27, 38)).add_modifier(Modifier::BOLD)),
-        InputMode::Command => Span::styled(" CMD ", Style::default().bg(Color::Rgb(224, 175, 104)).fg(Color::Rgb(26, 27, 38)).add_modifier(Modifier::BOLD)),
-        InputMode::Search => Span::styled(" SRC ", Style::default().bg(Color::Rgb(247, 118, 142)).fg(Color::Rgb(26, 27, 38)).add_modifier(Modifier::BOLD)),
+        InputMode::Normal => Span::styled(" NOR ", Style::default().bg(c.accent).fg(dark_bg).add_modifier(Modifier::BOLD)),
+        InputMode::Insert => Span::styled(" INS ", Style::default().bg(c.user_label).fg(dark_bg).add_modifier(Modifier::BOLD)),
+        InputMode::Command => Span::styled(" CMD ", Style::default().bg(c.warning).fg(dark_bg).add_modifier(Modifier::BOLD)),
+        InputMode::Search => Span::styled(" SRC ", Style::default().bg(Color::Rgb(247, 118, 142)).fg(dark_bg).add_modifier(Modifier::BOLD)),
     };
 
     // Build right-side title spans
@@ -288,23 +293,23 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     if effective_lines > 1 {
         right_title_spans.push(Span::styled(
             format!(" [{} lines] ", effective_lines),
-            Style::default().fg(Color::Rgb(86, 95, 137)),
+            Style::default().fg(c.dim),
         ));
     }
     if app.streaming {
         let frame = spinner_frame(app.tick_count);
         right_title_spans.push(Span::styled(
             format!(" {frame} streaming... "),
-            Style::default().fg(Color::Rgb(187, 154, 247)).add_modifier(Modifier::ITALIC),
+            Style::default().fg(c.assistant_label).add_modifier(Modifier::ITALIC),
         ));
     }
 
     let input_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(match app.input_mode {
-            InputMode::Normal => Color::Rgb(59, 66, 97),
-            InputMode::Insert => Color::Rgb(122, 162, 247),
-            InputMode::Command => Color::Rgb(224, 175, 104),
+            InputMode::Normal => c.border,
+            InputMode::Insert => c.accent,
+            InputMode::Command => c.warning,
             InputMode::Search => Color::Rgb(247, 118, 142),
         }))
         .border_type(BorderType::Rounded)
@@ -325,9 +330,9 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let style = if app.input.is_empty() && app.input_mode == InputMode::Insert {
-        Style::default().fg(Color::Rgb(86, 95, 137))
+        Style::default().fg(c.dim)
     } else {
-        Style::default().fg(Color::Rgb(192, 202, 245))
+        Style::default().fg(c.fg)
     };
 
     let input_paragraph = Paragraph::new(display_text)
@@ -362,34 +367,36 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
+    let c = app.colors();
+
     let mut spans = vec![
         Span::styled(
             format!(" {} ", app.config.provider),
-            Style::default().fg(Color::Rgb(86, 95, 137)),
+            Style::default().fg(c.dim),
         ),
-        Span::styled("│", Style::default().fg(Color::Rgb(59, 66, 97))),
+        Span::styled("│", Style::default().fg(c.border)),
         Span::styled(
             format!(" {} ", app.config.model),
-            Style::default().fg(Color::Rgb(86, 95, 137)),
+            Style::default().fg(c.dim),
         ),
     ];
 
     // Tools status
     if app.tools_enabled {
-        spans.push(Span::styled("│", Style::default().fg(Color::Rgb(59, 66, 97))));
+        spans.push(Span::styled("│", Style::default().fg(c.border)));
         spans.push(Span::styled(
             " tools ",
-            Style::default().fg(Color::Rgb(158, 206, 106)),
+            Style::default().fg(c.success),
         ));
     }
 
     // Neovim status
     if let Some(ref nvim) = app.neovim {
-        spans.push(Span::styled("│", Style::default().fg(Color::Rgb(59, 66, 97))));
+        spans.push(Span::styled("│", Style::default().fg(c.border)));
         spans.push(Span::styled(
             if nvim.is_connected() { "  nvim " } else { "  nvim ✗ " },
             Style::default().fg(if nvim.is_connected() {
-                Color::Rgb(158, 206, 106)
+                c.success
             } else {
                 Color::Rgb(247, 118, 142)
             }),
@@ -398,10 +405,10 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
 
     // Status message or default hints
     if let Some(ref msg) = app.status_message {
-        spans.push(Span::styled("│", Style::default().fg(Color::Rgb(59, 66, 97))));
+        spans.push(Span::styled("│", Style::default().fg(c.border)));
         spans.push(Span::styled(
             format!(" {msg} "),
-            Style::default().fg(Color::Rgb(224, 175, 104)),
+            Style::default().fg(c.warning),
         ));
     }
 
@@ -428,10 +435,10 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let right_text = format!(" {token_display} tokens{timing_display} | {msg_count}msgs ");
 
     let left = Line::from(spans);
-    let right = Span::styled(right_text, Style::default().fg(Color::Rgb(86, 95, 137)));
+    let right = Span::styled(right_text, Style::default().fg(c.dim));
 
     let bar = Paragraph::new(left)
-        .style(Style::default().bg(Color::Rgb(26, 27, 38)));
+        .style(Style::default().bg(c.bg_dark));
     f.render_widget(bar, area);
 
     // Right-aligned text
@@ -444,19 +451,20 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             1,
         );
         let right_p = Paragraph::new(Line::from(right))
-            .style(Style::default().bg(Color::Rgb(26, 27, 38)));
+            .style(Style::default().bg(c.bg_dark));
         f.render_widget(right_p, right_area);
     }
 }
 
-fn draw_help_overlay(f: &mut Frame, area: Rect) {
+fn draw_help_overlay(f: &mut Frame, app: &App, area: Rect) {
+    let c = app.colors();
     let overlay_area = centered_rect(60, 80, area);
     f.render_widget(Clear, overlay_area);
 
     let help_text = vec![
-        Line::from(Span::styled("Pro Chat — Keyboard Reference", Style::default().fg(Color::Rgb(122, 162, 247)).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("Pro Chat — Keyboard Reference", Style::default().fg(c.accent).add_modifier(Modifier::BOLD))),
         Line::from(""),
-        Line::from(Span::styled("Normal Mode", Style::default().fg(Color::Rgb(187, 154, 247)).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("Normal Mode", Style::default().fg(c.assistant_label).add_modifier(Modifier::BOLD))),
         Line::from(Span::raw("  i/a/A/I/o    Enter insert mode")),
         Line::from(Span::raw("  :            Enter command mode")),
         Line::from(Span::raw("  j/k          Scroll messages")),
@@ -479,7 +487,7 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
         Line::from(Span::raw("  Ctrl+h       History")),
         Line::from(Span::raw("  Ctrl+n       New conversation")),
         Line::from(""),
-        Line::from(Span::styled("Insert Mode", Style::default().fg(Color::Rgb(158, 206, 106)).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("Insert Mode", Style::default().fg(c.user_label).add_modifier(Modifier::BOLD))),
         Line::from(Span::raw("  Enter        Send message")),
         Line::from(Span::raw("  Shift+Enter  New line")),
         Line::from(Span::raw("  Esc          Normal mode")),
@@ -488,7 +496,7 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
         Line::from(Span::raw("  Tab          Autocomplete /cmd")),
         Line::from(Span::raw("  Up/Down      Input history")),
         Line::from(""),
-        Line::from(Span::styled("Commands", Style::default().fg(Color::Rgb(224, 175, 104)).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("Commands", Style::default().fg(c.warning).add_modifier(Modifier::BOLD))),
         Line::from(Span::raw("  /clear       Clear conversation")),
         Line::from(Span::raw("  /new         New conversation")),
         Line::from(Span::raw("  /model <m>   Set model")),
@@ -499,12 +507,14 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
         Line::from(Span::raw("  /nvim        Connect neovim")),
         Line::from(Span::raw("  /file <p>    Load file into input")),
         Line::from(Span::raw("  /diff        Load git diff into input")),
+        Line::from(Span::raw("  /export      Export conversation to markdown")),
+        Line::from(Span::raw("  /theme <t>   Switch color theme")),
         Line::from(Span::raw("  /retry       Regenerate last response")),
         Line::from(Span::raw("  /edit        Edit last user message")),
         Line::from(Span::raw("  /save        Save config")),
         Line::from(Span::raw("  /quit        Quit")),
         Line::from(""),
-        Line::from(Span::styled("  Press Esc or q to close", Style::default().fg(Color::Rgb(86, 95, 137)))),
+        Line::from(Span::styled("  Press Esc or q to close", Style::default().fg(c.dim))),
     ];
 
     let help = Paragraph::new(help_text)
@@ -512,12 +522,12 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Rgb(59, 66, 97)))
+                .border_style(Style::default().fg(c.border))
                 .title(Line::from(Span::styled(
                     " Help ",
-                    Style::default().fg(Color::Rgb(122, 162, 247)).add_modifier(Modifier::BOLD),
+                    Style::default().fg(c.accent).add_modifier(Modifier::BOLD),
                 )))
-                .style(Style::default().bg(Color::Rgb(22, 22, 30))),
+                .style(Style::default().bg(c.bg_dark)),
         )
         .wrap(Wrap { trim: false });
 
@@ -525,21 +535,22 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
 }
 
 fn draw_history_overlay(f: &mut Frame, app: &App, area: Rect) {
+    let c = app.colors();
     let overlay_area = centered_rect(60, 70, area);
     f.render_widget(Clear, overlay_area);
 
     let items: Vec<ListItem> = app.history_list.iter().enumerate().map(|(i, conv)| {
         let style = if i == app.overlay_scroll {
-            Style::default().fg(Color::Rgb(122, 162, 247)).add_modifier(Modifier::BOLD)
+            Style::default().fg(c.accent).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::Rgb(192, 202, 245))
+            Style::default().fg(c.fg)
         };
         let prefix = if i == app.overlay_scroll { "▸ " } else { "  " };
         let date = conv.updated_at.format("%Y-%m-%d %H:%M");
         ListItem::new(Line::from(vec![
             Span::styled(prefix, style),
             Span::styled(conv.title.chars().take(40).collect::<String>(), style),
-            Span::styled(format!("  {date}"), Style::default().fg(Color::Rgb(86, 95, 137))),
+            Span::styled(format!("  {date}"), Style::default().fg(c.dim)),
         ]))
     }).collect();
 
@@ -548,29 +559,31 @@ fn draw_history_overlay(f: &mut Frame, app: &App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Rgb(59, 66, 97)))
+                .border_style(Style::default().fg(c.border))
                 .title(Line::from(Span::styled(
                     " History ",
-                    Style::default().fg(Color::Rgb(122, 162, 247)).add_modifier(Modifier::BOLD),
+                    Style::default().fg(c.accent).add_modifier(Modifier::BOLD),
                 )))
-                .style(Style::default().bg(Color::Rgb(22, 22, 30))),
+                .style(Style::default().bg(c.bg_dark)),
         );
 
     f.render_widget(list, overlay_area);
 }
 
 fn draw_settings_overlay(f: &mut Frame, app: &App, area: Rect) {
+    let c = app.colors();
     let overlay_area = centered_rect(50, 50, area);
     f.render_widget(Clear, overlay_area);
 
     let settings = vec![
-        Line::from(Span::styled("Settings", Style::default().fg(Color::Rgb(122, 162, 247)).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("Settings", Style::default().fg(c.accent).add_modifier(Modifier::BOLD))),
         Line::from(""),
         Line::from(format!("  Provider:    {}", app.config.provider)),
         Line::from(format!("  Model:       {}", app.config.model)),
         Line::from(format!("  Temperature: {}", app.config.temperature)),
         Line::from(format!("  Max tokens:  {}", app.config.max_tokens)),
         Line::from(format!("  Vim mode:    {}", app.config.vim_mode)),
+        Line::from(format!("  Theme:       {}", app.config.theme_name)),
         Line::from(""),
         Line::from(format!("  Config: {}", crate::config::Config::path().display())),
     ];
@@ -580,19 +593,20 @@ fn draw_settings_overlay(f: &mut Frame, app: &App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Rgb(59, 66, 97)))
-                .style(Style::default().bg(Color::Rgb(22, 22, 30))),
+                .border_style(Style::default().fg(c.border))
+                .style(Style::default().bg(c.bg_dark)),
         );
 
     f.render_widget(p, overlay_area);
 }
 
 fn draw_tool_confirm_overlay(f: &mut Frame, app: &App, area: Rect) {
+    let c = app.colors();
     let overlay_area = centered_rect(60, 40, area);
     f.render_widget(Clear, overlay_area);
 
     let call = match app.pending_tool_calls.get(app.pending_tool_confirm_idx) {
-        Some(c) => c,
+        Some(tc) => tc,
         None => return,
     };
 
@@ -602,19 +616,19 @@ fn draw_tool_confirm_overlay(f: &mut Frame, app: &App, area: Rect) {
     let lines = vec![
         Line::from(Span::styled(
             "Tool Execution Request",
-            Style::default().fg(Color::Rgb(224, 175, 104)).add_modifier(Modifier::BOLD),
+            Style::default().fg(c.warning).add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(vec![
-            Span::styled("  Tool: ", Style::default().fg(Color::Rgb(86, 95, 137))),
+            Span::styled("  Tool: ", Style::default().fg(c.dim)),
             Span::styled(
                 tool_name.to_string(),
-                Style::default().fg(Color::Rgb(122, 162, 247)).add_modifier(Modifier::BOLD),
+                Style::default().fg(c.accent).add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(vec![
-            Span::styled("  Args: ", Style::default().fg(Color::Rgb(86, 95, 137))),
-            Span::styled(tool_args, Style::default().fg(Color::Rgb(192, 202, 245))),
+            Span::styled("  Args: ", Style::default().fg(c.dim)),
+            Span::styled(tool_args, Style::default().fg(c.fg)),
         ]),
         Line::from(""),
         Line::from(Span::styled(
@@ -623,18 +637,18 @@ fn draw_tool_confirm_overlay(f: &mut Frame, app: &App, area: Rect) {
                 app.pending_tool_confirm_idx + 1,
                 app.pending_tool_calls.len()
             ),
-            Style::default().fg(Color::Rgb(86, 95, 137)),
+            Style::default().fg(c.dim),
         )),
         Line::from(""),
         Line::from(vec![
-            Span::styled("  [y] ", Style::default().fg(Color::Rgb(158, 206, 106)).add_modifier(Modifier::BOLD)),
-            Span::styled("Allow  ", Style::default().fg(Color::Rgb(192, 202, 245))),
-            Span::styled("[a] ", Style::default().fg(Color::Rgb(122, 162, 247)).add_modifier(Modifier::BOLD)),
-            Span::styled("Always  ", Style::default().fg(Color::Rgb(192, 202, 245))),
+            Span::styled("  [y] ", Style::default().fg(c.success).add_modifier(Modifier::BOLD)),
+            Span::styled("Allow  ", Style::default().fg(c.fg)),
+            Span::styled("[a] ", Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
+            Span::styled("Always  ", Style::default().fg(c.fg)),
             Span::styled("[n] ", Style::default().fg(Color::Rgb(247, 118, 142)).add_modifier(Modifier::BOLD)),
-            Span::styled("Deny  ", Style::default().fg(Color::Rgb(192, 202, 245))),
+            Span::styled("Deny  ", Style::default().fg(c.fg)),
             Span::styled("[d] ", Style::default().fg(Color::Rgb(247, 118, 142)).add_modifier(Modifier::BOLD)),
-            Span::styled("Deny all", Style::default().fg(Color::Rgb(192, 202, 245))),
+            Span::styled("Deny all", Style::default().fg(c.fg)),
         ]),
     ];
 
@@ -643,12 +657,12 @@ fn draw_tool_confirm_overlay(f: &mut Frame, app: &App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(Color::Rgb(224, 175, 104)))
+                .border_style(Style::default().fg(c.warning))
                 .title(Line::from(Span::styled(
                     " Confirm ",
-                    Style::default().fg(Color::Rgb(224, 175, 104)).add_modifier(Modifier::BOLD),
+                    Style::default().fg(c.warning).add_modifier(Modifier::BOLD),
                 )))
-                .style(Style::default().bg(Color::Rgb(22, 22, 30))),
+                .style(Style::default().bg(c.bg_dark)),
         )
         .wrap(Wrap { trim: false });
 
