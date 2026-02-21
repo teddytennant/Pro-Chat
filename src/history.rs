@@ -72,6 +72,12 @@ impl Conversation {
         Ok(convs)
     }
 
+    /// Returns the most recently updated conversation (by updated_at timestamp).
+    pub fn latest() -> anyhow::Result<Option<Conversation>> {
+        let convs = Self::list_all()?;
+        Ok(convs.into_iter().next())
+    }
+
     pub fn delete(id: &str) -> anyhow::Result<()> {
         let path = Config::history_dir().join(format!("{id}.json"));
         if path.exists() {
