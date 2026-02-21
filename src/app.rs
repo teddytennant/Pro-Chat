@@ -4,7 +4,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 
 use crate::api::{ApiClient, Message, MessageContent};
-use crate::config::Config;
+use crate::config::{Config, ThemeColors, get_theme};
 use crate::event::{Event, EventHandler};
 use crate::history::Conversation;
 use crate::keybinds::{handle_key, KeyAction};
@@ -82,6 +82,10 @@ pub struct App {
     pub search_match_idx: usize,
     /// Tick counter for animations
     pub tick_count: u64,
+    /// When the current stream started
+    pub stream_start_time: Option<std::time::Instant>,
+    /// Duration of the last completed response
+    pub last_response_time: Option<std::time::Duration>,
     api_client: ApiClient,
     event_tx: Option<mpsc::UnboundedSender<Event>>,
 }
@@ -90,6 +94,8 @@ pub struct App {
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+    /// When this message was created
+    pub timestamp: chrono::DateTime<chrono::Utc>,
     /// Optional tool invocations associated with this message
     pub tool_invocations: Vec<ToolInvocation>,
 }
@@ -146,6 +152,8 @@ impl App {
             search_matches: Vec::new(),
             search_match_idx: 0,
             tick_count: 0,
+            stream_start_time: None,
+            last_response_time: None,
             api_client: ApiClient::new(),
             event_tx: None,
         };
@@ -184,11 +192,17 @@ impl App {
         self.cursor_pos = self.input.len();
     }
 
+    /// Return the resolved theme colors based on the current config theme_name.
+    pub fn colors(&self) -> ThemeColors {
+        get_theme(&self.config.theme_name)
+    }
+
     pub fn load_conversation(&mut self, id: &str) -> anyhow::Result<()> {
         let conv = Conversation::load(id)?;
         self.messages = conv.messages.iter().map(|m| ChatMessage {
             role: m.role.clone(),
             content: m.content.clone(),
+            timestamp: m.timestamp,
             tool_invocations: Vec::new(),
         }).collect();
         self.conversation = conv;
@@ -248,6 +262,12 @@ impl App {
                             KeyAction::CancelStream => {
                                 self.cancel_stream();
                             }
+                            KeyAction::RetryMessage => {
+                                self.retry_last().await?;
+                            }
+                            KeyAction::EditLastMessage => {
+                                self.edit_last_message();
+                            }
                             _ => {}
                         }
                     }
@@ -262,6 +282,9 @@ impl App {
                     }
                     Event::ApiDone => {
                         self.streaming = false;
+                        if let Some(start) = self.stream_start_time.take() {
+                            self.last_response_time = Some(start.elapsed());
+                        }
                         if !self.stream_buffer.is_empty() {
                             self.conversation.add_message("assistant", &self.stream_buffer);
                             self.save_and_track_conversation();
@@ -270,6 +293,7 @@ impl App {
                     }
                     Event::ApiError(err) => {
                         self.streaming = false;
+                        self.stream_start_time = None;
                         self.stream_buffer.clear();
                         if let Some(last) = self.messages.last() {
                             if last.role == "assistant" && last.content.is_empty() {
@@ -515,12 +539,14 @@ impl App {
 
         // Continue the conversation - make another API call
         self.streaming = true;
+        self.stream_start_time = Some(std::time::Instant::now());
         self.stream_buffer.clear();
 
         // Add a new assistant placeholder for the continuation
         self.messages.push(ChatMessage {
             role: "assistant".into(),
             content: String::new(),
+            timestamp: chrono::Utc::now(),
             tool_invocations: Vec::new(),
         });
 
@@ -586,6 +612,7 @@ impl App {
         self.messages.push(ChatMessage {
             role: "user".into(),
             content: input.clone(),
+            timestamp: chrono::Utc::now(),
             tool_invocations: Vec::new(),
         });
         self.conversation.add_message("user", &input);
@@ -605,10 +632,12 @@ impl App {
         self.messages.push(ChatMessage {
             role: "assistant".into(),
             content: String::new(),
+            timestamp: chrono::Utc::now(),
             tool_invocations: Vec::new(),
         });
 
         self.streaming = true;
+        self.stream_start_time = Some(std::time::Instant::now());
         self.stream_buffer.clear();
         self.scroll_to_bottom();
 
@@ -651,6 +680,166 @@ impl App {
         });
 
         Ok(())
+    }
+
+    /// Retry/regenerate the last assistant response.
+    /// Removes the last assistant message and re-sends to the API.
+    pub async fn retry_last(&mut self) -> anyhow::Result<()> {
+        if self.streaming {
+            self.status_message = Some("Cannot retry while streaming".into());
+            return Ok(());
+        }
+
+        // Remove the last assistant message from display messages
+        if let Some(last) = self.messages.last() {
+            if last.role != "assistant" {
+                self.status_message = Some("No assistant message to retry".into());
+                return Ok(());
+            }
+        } else {
+            self.status_message = Some("No messages to retry".into());
+            return Ok(());
+        }
+        self.messages.pop();
+
+        // Remove the last assistant message from api_messages
+        if let Some(pos) = self.api_messages.iter().rposition(|m| m.role == "assistant") {
+            self.api_messages.remove(pos);
+        }
+
+        // Remove from conversation history
+        if let Some(pos) = self.conversation.messages.iter().rposition(|m| m.role == "assistant") {
+            self.conversation.messages.remove(pos);
+        }
+
+        // Check we still have a user message to respond to
+        if self.api_messages.is_empty() {
+            self.status_message = Some("No user message to retry".into());
+            return Ok(());
+        }
+
+        let api_key = match self.config.api_key_from_env() {
+            Some(key) => key,
+            None => {
+                self.status_message = Some("No API key set".into());
+                return Ok(());
+            }
+        };
+
+        self.status_message = Some("Regenerating...".into());
+
+        // Add placeholder for new assistant response
+        self.messages.push(ChatMessage {
+            role: "assistant".into(),
+            content: String::new(),
+            timestamp: chrono::Utc::now(),
+            tool_invocations: Vec::new(),
+        });
+
+        self.streaming = true;
+        self.stream_start_time = Some(std::time::Instant::now());
+        self.stream_buffer.clear();
+        self.scroll_to_bottom();
+
+        let tx = self.event_tx.clone().unwrap();
+        let provider = self.config.provider.clone();
+        let model = self.config.model.clone();
+        let system = self.config.system_prompt.clone();
+        let max_tokens = self.config.max_tokens;
+        let temp = self.config.temperature;
+        let messages = self.api_messages.clone();
+        let tools_enabled = self.tools_enabled && provider == "anthropic";
+        let client = ApiClient::new();
+
+        tokio::spawn(async move {
+            let result = match provider.as_str() {
+                "openai" => {
+                    client.stream_openai(
+                        &api_key, &model, &messages,
+                        system.as_deref(), max_tokens, temp, tx.clone(),
+                    ).await
+                }
+                _ => {
+                    if tools_enabled {
+                        client.call_anthropic_with_tools(
+                            &api_key, &model, &messages,
+                            system.as_deref(), max_tokens, temp, tx.clone(),
+                        ).await
+                    } else {
+                        client.stream_anthropic(
+                            &api_key, &model, &messages,
+                            system.as_deref(), max_tokens, temp, tx.clone(),
+                        ).await
+                    }
+                }
+            };
+
+            if let Err(e) = result {
+                let _ = tx.send(Event::ApiError(e.to_string()));
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Edit the last user message: put it back in input, remove it and the following assistant response.
+    pub fn edit_last_message(&mut self) {
+        if self.streaming {
+            self.status_message = Some("Cannot edit while streaming".into());
+            return;
+        }
+
+        // Find the last user message
+        let last_user_idx = match self.messages.iter().rposition(|m| m.role == "user") {
+            Some(idx) => idx,
+            None => {
+                self.status_message = Some("No user message to edit".into());
+                return;
+            }
+        };
+
+        // Get the content and put it in the input field
+        let content = self.messages[last_user_idx].content.clone();
+        self.input = content;
+        self.cursor_pos = self.input.len();
+
+        // Remove the user message and any following assistant message from display messages
+        let remove_count = if last_user_idx + 1 < self.messages.len()
+            && self.messages[last_user_idx + 1].role == "assistant"
+        {
+            2
+        } else {
+            1
+        };
+        self.messages.drain(last_user_idx..last_user_idx + remove_count);
+
+        // Remove corresponding messages from api_messages
+        if let Some(api_user_idx) = self.api_messages.iter().rposition(|m| m.role == "user") {
+            let api_remove_end = if api_user_idx + 1 < self.api_messages.len()
+                && self.api_messages[api_user_idx + 1].role == "assistant"
+            {
+                api_user_idx + 2
+            } else {
+                api_user_idx + 1
+            };
+            self.api_messages.drain(api_user_idx..api_remove_end);
+        }
+
+        // Remove from conversation history
+        if let Some(conv_user_idx) = self.conversation.messages.iter().rposition(|m| m.role == "user") {
+            let conv_remove_end = if conv_user_idx + 1 < self.conversation.messages.len()
+                && self.conversation.messages[conv_user_idx + 1].role == "assistant"
+            {
+                conv_user_idx + 2
+            } else {
+                conv_user_idx + 1
+            };
+            self.conversation.messages.drain(conv_user_idx..conv_remove_end);
+        }
+
+        // Switch to insert mode so the user can edit
+        self.input_mode = InputMode::Insert;
+        self.status_message = Some("Editing last message".into());
     }
 
     fn handle_slash_command(&mut self, cmd: &str) -> anyhow::Result<()> {
@@ -867,6 +1056,26 @@ impl App {
                     }
                 }
             }
+            "/export" => {
+                self.export_conversation(parts.get(1).map(|s| s.trim()));
+            }
+            "/theme" => {
+                if let Some(name) = parts.get(1) {
+                    let name = name.trim();
+                    let valid = ["tokyo-night", "catppuccin", "gruvbox", "dracula"];
+                    if valid.contains(&name) {
+                        self.config.theme_name = name.to_string();
+                        self.status_message = Some(format!("Theme set to {name}"));
+                    } else {
+                        self.status_message = Some(format!(
+                            "Unknown theme: {name}. Available: {}",
+                            valid.join(", ")
+                        ));
+                    }
+                } else {
+                    self.status_message = Some(format!("Current theme: {}", self.config.theme_name));
+                }
+            }
             "/quit" | "/q" => {
                 self.should_quit = true;
             }
@@ -879,13 +1088,127 @@ impl App {
         Ok(())
     }
 
+    /// Export the current conversation to a markdown file.
+    fn export_conversation(&mut self, path_arg: Option<&str>) {
+        if self.messages.is_empty() {
+            self.status_message = Some("No messages to export".into());
+            return;
+        }
+
+        let path = if let Some(p) = path_arg {
+            if p.is_empty() {
+                self.default_export_path()
+            } else {
+                std::path::PathBuf::from(p)
+            }
+        } else {
+            self.default_export_path()
+        };
+
+        let mut content = String::new();
+        for msg in &self.messages {
+            let label = match msg.role.as_str() {
+                "user" => "You",
+                "assistant" => "Assistant",
+                _ => "System",
+            };
+            content.push_str(&format!("## {label}\n\n"));
+            content.push_str(&msg.content);
+            content.push_str("\n\n");
+
+            // Include tool invocations if any
+            for inv in &msg.tool_invocations {
+                content.push_str(&format!("**Tool: {}**\n", inv.tool_name));
+                content.push_str(&format!("Args: {}\n", inv.tool_args));
+                if let Some(ref result) = inv.result {
+                    let status = if result.success { "Success" } else { "Error" };
+                    content.push_str(&format!("Result ({status}):\n```\n{}\n```\n\n", result.output));
+                }
+            }
+        }
+
+        match std::fs::write(&path, &content) {
+            Ok(()) => {
+                self.status_message = Some(format!("Exported to {}", path.display()));
+            }
+            Err(e) => {
+                self.status_message = Some(format!("Export failed: {e}"));
+            }
+        }
+    }
+
+    fn default_export_path(&self) -> std::path::PathBuf {
+        let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+        std::path::PathBuf::from(format!("./chat-export-{timestamp}.md"))
+    }
+
     pub fn cancel_stream(&mut self) {
         self.streaming = false;
+        self.stream_start_time = None;
         if !self.stream_buffer.is_empty() {
             self.conversation.add_message("assistant", &self.stream_buffer);
         }
         self.stream_buffer.clear();
         self.status_message = Some("Stream cancelled".into());
+    }
+
+    /// Retry the last user message by resending it.
+    pub async fn retry_last(&mut self) -> anyhow::Result<()> {
+        // Find the last user message
+        if let Some(last_user_content) = self.messages.iter().rev()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.clone())
+        {
+            // Remove the last assistant message if it exists
+            if let Some(last) = self.messages.last() {
+                if last.role == "assistant" {
+                    self.messages.pop();
+                    self.api_messages.pop();
+                }
+            }
+            // Remove the last user message
+            if let Some(last) = self.messages.last() {
+                if last.role == "user" {
+                    self.messages.pop();
+                    self.api_messages.pop();
+                }
+            }
+            // Re-send
+            self.input = last_user_content;
+            self.cursor_pos = self.input.len();
+            self.send_message().await?;
+        } else {
+            self.status_message = Some("No message to retry".into());
+        }
+        Ok(())
+    }
+
+    /// Load the last user message back into the input for editing.
+    pub fn edit_last_message(&mut self) {
+        if let Some(last_user_content) = self.messages.iter().rev()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.clone())
+        {
+            // Remove the last assistant response if present
+            if let Some(last) = self.messages.last() {
+                if last.role == "assistant" {
+                    self.messages.pop();
+                    self.api_messages.pop();
+                }
+            }
+            // Remove the last user message
+            if let Some(last) = self.messages.last() {
+                if last.role == "user" {
+                    self.messages.pop();
+                    self.api_messages.pop();
+                }
+            }
+            self.input = last_user_content;
+            self.cursor_pos = self.input.len();
+            self.status_message = Some("Editing last message".into());
+        } else {
+            self.status_message = Some("No message to edit".into());
+        }
     }
 
     // Text editing operations
@@ -1200,7 +1523,7 @@ impl App {
         let commands = [
             "/clear", "/new", "/model", "/provider", "/system",
             "/history", "/help", "/temp", "/save", "/nvim", "/tools", "/file",
-            "/context", "/paste", "/resume", "/diff", "/quit",
+            "/context", "/paste", "/resume", "/diff", "/export", "/theme", "/quit",
         ];
         let matches: Vec<&&str> = commands.iter()
             .filter(|c| c.starts_with(&self.input))
