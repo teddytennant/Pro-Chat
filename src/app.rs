@@ -1,13 +1,15 @@
 use crossterm::event::MouseEventKind;
 use ratatui::prelude::*;
+use serde_json::Value;
 use tokio::sync::mpsc;
 
-use crate::api::{ApiClient, Message};
+use crate::api::{ApiClient, Message, MessageContent};
 use crate::config::Config;
 use crate::event::{Event, EventHandler};
 use crate::history::Conversation;
 use crate::keybinds::{handle_key, KeyAction};
 use crate::neovim::NeovimClient;
+use crate::tools::{self, ToolCall, ToolExecutor, ToolPermission, ToolResult};
 use crate::ui;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -23,6 +25,16 @@ pub enum Overlay {
     Help,
     History,
     Settings,
+    ToolConfirm,
+}
+
+/// Represents a tool invocation displayed in the chat.
+#[derive(Debug, Clone)]
+pub struct ToolInvocation {
+    pub tool_name: String,
+    pub tool_args: String,
+    pub result: Option<ToolResult>,
+    pub collapsed: bool,
 }
 
 pub struct App {
@@ -45,6 +57,14 @@ pub struct App {
     pub should_quit: bool,
     pub terminal_height: u16,
     pub neovim: Option<NeovimClient>,
+    pub tool_executor: ToolExecutor,
+    pub pending_tool_calls: Vec<ToolCall>,
+    pub pending_tool_confirm_idx: usize,
+    pub tool_invocations: Vec<ToolInvocation>,
+    /// Full API message history (includes tool_use and tool_result blocks)
+    pub api_messages: Vec<Message>,
+    /// Whether tools are enabled for this session
+    pub tools_enabled: bool,
     api_client: ApiClient,
     event_tx: Option<mpsc::UnboundedSender<Event>>,
 }
@@ -53,6 +73,8 @@ pub struct App {
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+    /// Optional tool invocations associated with this message
+    pub tool_invocations: Vec<ToolInvocation>,
 }
 
 impl App {
@@ -65,10 +87,16 @@ impl App {
             None
         };
 
+        let mut tool_executor = ToolExecutor::new();
+        // Auto-allow read-only tools
+        tool_executor.set_permission("read_file", ToolPermission::AutoAllow);
+        tool_executor.set_permission("list_files", ToolPermission::AutoAllow);
+        tool_executor.set_permission("search_files", ToolPermission::AutoAllow);
+
         Self {
             config,
             input: String::new(),
-            input_mode: InputMode::Insert, // Start in insert mode for immediate typing
+            input_mode: InputMode::Insert,
             cursor_pos: 0,
             messages: Vec::new(),
             scroll_offset: 0,
@@ -85,6 +113,12 @@ impl App {
             should_quit: false,
             terminal_height: 24,
             neovim,
+            tool_executor,
+            pending_tool_calls: Vec::new(),
+            pending_tool_confirm_idx: 0,
+            tool_invocations: Vec::new(),
+            api_messages: Vec::new(),
+            tools_enabled: true,
             api_client: ApiClient::new(),
             event_tx: None,
         }
@@ -112,6 +146,7 @@ impl App {
         self.messages = conv.messages.iter().map(|m| ChatMessage {
             role: m.role.clone(),
             content: m.content.clone(),
+            tool_invocations: Vec::new(),
         }).collect();
         self.conversation = conv;
         self.scroll_to_bottom();
@@ -134,22 +169,24 @@ impl App {
         self.event_tx = Some(events.sender());
 
         loop {
-            // Draw UI
             terminal.draw(|f| {
                 self.terminal_height = f.area().height;
                 ui::draw(f, self);
             })?;
 
-            // Handle events
             if let Some(event) = events.next().await {
                 match event {
                     Event::Key(key) => {
-                        // Clear status message on any keypress
                         self.status_message = None;
+
+                        // Handle tool confirmation overlay keys
+                        if self.overlay == Overlay::ToolConfirm {
+                            self.handle_tool_confirm_key(key).await;
+                            continue;
+                        }
 
                         match handle_key(self, key) {
                             KeyAction::Quit => {
-                                // Save conversation before quitting
                                 if !self.messages.is_empty() {
                                     let _ = self.conversation.save();
                                 }
@@ -166,7 +203,6 @@ impl App {
                     }
                     Event::ApiChunk(text) => {
                         self.stream_buffer.push_str(&text);
-                        // Update the last assistant message
                         if let Some(last) = self.messages.last_mut() {
                             if last.role == "assistant" {
                                 last.content = self.stream_buffer.clone();
@@ -176,7 +212,6 @@ impl App {
                     }
                     Event::ApiDone => {
                         self.streaming = false;
-                        // Save to conversation history
                         if !self.stream_buffer.is_empty() {
                             self.conversation.add_message("assistant", &self.stream_buffer);
                             let _ = self.conversation.save();
@@ -186,13 +221,16 @@ impl App {
                     Event::ApiError(err) => {
                         self.streaming = false;
                         self.stream_buffer.clear();
-                        // Remove the empty assistant message
                         if let Some(last) = self.messages.last() {
                             if last.role == "assistant" && last.content.is_empty() {
                                 self.messages.pop();
                             }
                         }
                         self.status_message = Some(format!("Error: {err}"));
+                    }
+                    Event::ToolUseRequest(response_body) => {
+                        self.streaming = false;
+                        self.handle_tool_use_response(&response_body).await;
                     }
                     Event::Resize(_, h) => {
                         self.terminal_height = h;
@@ -214,18 +252,269 @@ impl App {
         }
     }
 
+    /// Handle a tool_use response from the API.
+    async fn handle_tool_use_response(&mut self, response_body: &str) {
+        let response: Value = match serde_json::from_str(response_body) {
+            Ok(v) => v,
+            Err(e) => {
+                self.status_message = Some(format!("Failed to parse tool response: {e}"));
+                return;
+            }
+        };
+
+        // Store the assistant's response in api_messages (with tool_use blocks)
+        self.api_messages.push(Message {
+            role: "assistant".into(),
+            content: MessageContent::Blocks(
+                response["content"].as_array().cloned().unwrap_or_default()
+            ),
+        });
+
+        // Parse tool calls
+        let tool_calls = tools::parse_tool_calls(&response);
+        if tool_calls.is_empty() {
+            return;
+        }
+
+        // Save current stream text to the last assistant message
+        if !self.stream_buffer.is_empty() {
+            if let Some(last) = self.messages.last_mut() {
+                if last.role == "assistant" {
+                    last.content = self.stream_buffer.clone();
+                }
+            }
+        }
+        self.stream_buffer.clear();
+
+        self.pending_tool_calls = tool_calls;
+        self.pending_tool_confirm_idx = 0;
+
+        // Process tool calls - auto-allow or prompt
+        self.process_next_tool_call().await;
+    }
+
+    /// Process tool calls one by one. Auto-allowed ones run immediately,
+    /// otherwise show confirmation overlay.
+    async fn process_next_tool_call(&mut self) {
+        while self.pending_tool_confirm_idx < self.pending_tool_calls.len() {
+            let call = &self.pending_tool_calls[self.pending_tool_confirm_idx];
+            let perm = self.tool_executor.permission(call.tool.name());
+
+            match perm {
+                ToolPermission::AutoAllow => {
+                    self.execute_tool_at_index(self.pending_tool_confirm_idx);
+                    self.pending_tool_confirm_idx += 1;
+                }
+                ToolPermission::AskFirst => {
+                    // Show confirmation overlay
+                    self.overlay = Overlay::ToolConfirm;
+                    return;
+                }
+                ToolPermission::Deny => {
+                    // Add a denied result
+                    let call = &self.pending_tool_calls[self.pending_tool_confirm_idx];
+                    let invocation = ToolInvocation {
+                        tool_name: call.tool.name().to_string(),
+                        tool_args: format_tool_args(&call.tool),
+                        result: Some(ToolResult::err("Tool execution denied by user")),
+                        collapsed: false,
+                    };
+                    self.tool_invocations.push(invocation);
+                    if let Some(last) = self.messages.last_mut() {
+                        if last.role == "assistant" {
+                            last.tool_invocations.push(ToolInvocation {
+                                tool_name: call.tool.name().to_string(),
+                                tool_args: format_tool_args(&call.tool),
+                                result: Some(ToolResult::err("Denied")),
+                                collapsed: false,
+                            });
+                        }
+                    }
+                    self.pending_tool_confirm_idx += 1;
+                }
+            }
+        }
+
+        // All tool calls processed - send results back to the API
+        self.send_tool_results().await;
+    }
+
+    fn execute_tool_at_index(&mut self, idx: usize) {
+        let call = &self.pending_tool_calls[idx];
+        let result = self.tool_executor.execute(&call.tool);
+
+        let invocation = ToolInvocation {
+            tool_name: call.tool.name().to_string(),
+            tool_args: format_tool_args(&call.tool),
+            result: Some(result.clone()),
+            collapsed: result.output.lines().count() > 10,
+        };
+
+        // Add to the current assistant message's tool invocations
+        if let Some(last) = self.messages.last_mut() {
+            if last.role == "assistant" {
+                last.tool_invocations.push(invocation.clone());
+            }
+        }
+        self.tool_invocations.push(invocation);
+        self.scroll_to_bottom();
+    }
+
+    async fn handle_tool_confirm_key(&mut self, key: crossterm::event::KeyEvent) {
+        use crossterm::event::KeyCode;
+
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Enter => {
+                // Allow this tool
+                self.overlay = Overlay::None;
+                self.execute_tool_at_index(self.pending_tool_confirm_idx);
+                self.pending_tool_confirm_idx += 1;
+                self.process_next_tool_call().await;
+            }
+            KeyCode::Char('a') => {
+                // Always allow this tool type
+                let tool_name = self.pending_tool_calls[self.pending_tool_confirm_idx]
+                    .tool.name().to_string();
+                self.tool_executor.set_permission(&tool_name, ToolPermission::AutoAllow);
+                self.overlay = Overlay::None;
+                self.execute_tool_at_index(self.pending_tool_confirm_idx);
+                self.pending_tool_confirm_idx += 1;
+                self.process_next_tool_call().await;
+            }
+            KeyCode::Char('n') | KeyCode::Esc => {
+                // Deny this tool
+                let call = &self.pending_tool_calls[self.pending_tool_confirm_idx];
+                let invocation = ToolInvocation {
+                    tool_name: call.tool.name().to_string(),
+                    tool_args: format_tool_args(&call.tool),
+                    result: Some(ToolResult::err("Denied by user")),
+                    collapsed: false,
+                };
+                if let Some(last) = self.messages.last_mut() {
+                    if last.role == "assistant" {
+                        last.tool_invocations.push(invocation.clone());
+                    }
+                }
+                self.tool_invocations.push(invocation);
+                self.overlay = Overlay::None;
+                self.pending_tool_confirm_idx += 1;
+                self.process_next_tool_call().await;
+            }
+            KeyCode::Char('d') => {
+                // Deny all of this type
+                let tool_name = self.pending_tool_calls[self.pending_tool_confirm_idx]
+                    .tool.name().to_string();
+                self.tool_executor.set_permission(&tool_name, ToolPermission::Deny);
+                let call = &self.pending_tool_calls[self.pending_tool_confirm_idx];
+                let invocation = ToolInvocation {
+                    tool_name: call.tool.name().to_string(),
+                    tool_args: format_tool_args(&call.tool),
+                    result: Some(ToolResult::err("Denied by user")),
+                    collapsed: false,
+                };
+                if let Some(last) = self.messages.last_mut() {
+                    if last.role == "assistant" {
+                        last.tool_invocations.push(invocation.clone());
+                    }
+                }
+                self.tool_invocations.push(invocation);
+                self.overlay = Overlay::None;
+                self.pending_tool_confirm_idx += 1;
+                self.process_next_tool_call().await;
+            }
+            _ => {}
+        }
+    }
+
+    /// Send all tool results back to the API and continue the conversation.
+    async fn send_tool_results(&mut self) {
+        let mut tool_results: Vec<Value> = Vec::new();
+
+        for (i, call) in self.pending_tool_calls.iter().enumerate() {
+            let result = if let Some(inv) = self.tool_invocations.iter().rev()
+                .find(|inv| inv.tool_name == call.tool.name())
+            {
+                inv.result.clone().unwrap_or_else(|| ToolResult::err("No result"))
+            } else {
+                ToolResult::err("Tool not executed")
+            };
+
+            tool_results.push(serde_json::json!({
+                "type": "tool_result",
+                "tool_use_id": call.id,
+                "content": result.output,
+                "is_error": !result.success,
+            }));
+            let _ = i; // used in iteration
+        }
+
+        if tool_results.is_empty() {
+            return;
+        }
+
+        // Add tool results as a user message (Anthropic API format)
+        self.api_messages.push(Message {
+            role: "user".into(),
+            content: MessageContent::Blocks(tool_results),
+        });
+
+        self.pending_tool_calls.clear();
+        self.pending_tool_confirm_idx = 0;
+
+        // Continue the conversation - make another API call
+        self.streaming = true;
+        self.stream_buffer.clear();
+
+        // Add a new assistant placeholder for the continuation
+        self.messages.push(ChatMessage {
+            role: "assistant".into(),
+            content: String::new(),
+            tool_invocations: Vec::new(),
+        });
+
+        let api_key = match self.config.api_key_from_env() {
+            Some(key) => key,
+            None => return,
+        };
+
+        let tx = self.event_tx.clone().unwrap();
+        let model = self.config.model.clone();
+        let system = self.config.system_prompt.clone();
+        let max_tokens = self.config.max_tokens;
+        let temp = self.config.temperature;
+        let messages = self.api_messages.clone();
+        let tools_enabled = self.tools_enabled;
+        let client = ApiClient::new();
+
+        tokio::spawn(async move {
+            let result = if tools_enabled {
+                client.call_anthropic_with_tools(
+                    &api_key, &model, &messages,
+                    system.as_deref(), max_tokens, temp, tx.clone(),
+                ).await
+            } else {
+                client.stream_anthropic(
+                    &api_key, &model, &messages,
+                    system.as_deref(), max_tokens, temp, tx.clone(),
+                ).await
+            };
+
+            if let Err(e) = result {
+                let _ = tx.send(Event::ApiError(e.to_string()));
+            }
+        });
+    }
+
     pub async fn send_message(&mut self) -> anyhow::Result<()> {
         let input = self.input.trim().to_string();
         if input.is_empty() {
             return Ok(());
         }
 
-        // Handle slash commands
         if input.starts_with('/') {
             return self.handle_slash_command(&input);
         }
 
-        // Check for API key
         let api_key = match self.config.api_key_from_env() {
             Some(key) => key,
             None => {
@@ -245,14 +534,18 @@ impl App {
         self.messages.push(ChatMessage {
             role: "user".into(),
             content: input.clone(),
+            tool_invocations: Vec::new(),
         });
         self.conversation.add_message("user", &input);
 
-        // Save input to history
+        // Add to API message history
+        self.api_messages.push(Message {
+            role: "user".into(),
+            content: MessageContent::Text(input.clone()),
+        });
+
         self.input_history.push(input);
         self.input_history_idx = None;
-
-        // Clear input
         self.input.clear();
         self.cursor_pos = 0;
 
@@ -260,21 +553,12 @@ impl App {
         self.messages.push(ChatMessage {
             role: "assistant".into(),
             content: String::new(),
+            tool_invocations: Vec::new(),
         });
 
-        // Start streaming
         self.streaming = true;
         self.stream_buffer.clear();
         self.scroll_to_bottom();
-
-        // Build messages for API
-        let api_messages: Vec<Message> = self.messages.iter()
-            .filter(|m| !m.content.is_empty())
-            .map(|m| Message {
-                role: m.role.clone(),
-                content: m.content.clone(),
-            })
-            .collect();
 
         let tx = self.event_tx.clone().unwrap();
         let provider = self.config.provider.clone();
@@ -282,21 +566,30 @@ impl App {
         let system = self.config.system_prompt.clone();
         let max_tokens = self.config.max_tokens;
         let temp = self.config.temperature;
+        let messages = self.api_messages.clone();
+        let tools_enabled = self.tools_enabled && provider == "anthropic";
         let client = ApiClient::new();
 
         tokio::spawn(async move {
             let result = match provider.as_str() {
                 "openai" => {
                     client.stream_openai(
-                        &api_key, &model, &api_messages,
+                        &api_key, &model, &messages,
                         system.as_deref(), max_tokens, temp, tx.clone(),
                     ).await
                 }
                 _ => {
-                    client.stream_anthropic(
-                        &api_key, &model, &api_messages,
-                        system.as_deref(), max_tokens, temp, tx.clone(),
-                    ).await
+                    if tools_enabled {
+                        client.call_anthropic_with_tools(
+                            &api_key, &model, &messages,
+                            system.as_deref(), max_tokens, temp, tx.clone(),
+                        ).await
+                    } else {
+                        client.stream_anthropic(
+                            &api_key, &model, &messages,
+                            system.as_deref(), max_tokens, temp, tx.clone(),
+                        ).await
+                    }
                 }
             };
 
@@ -313,6 +606,8 @@ impl App {
         match parts[0] {
             "/clear" | "/c" => {
                 self.messages.clear();
+                self.api_messages.clear();
+                self.tool_invocations.clear();
                 self.conversation = Conversation::new();
                 self.status_message = Some("Conversation cleared".into());
             }
@@ -377,6 +672,33 @@ impl App {
                     self.status_message = Some(format!("Neovim connected: {socket}"));
                 } else {
                     self.status_message = Some("No Neovim instance found".into());
+                }
+            }
+            "/tools" => {
+                if let Some(arg) = parts.get(1) {
+                    match *arg {
+                        "on" => {
+                            self.tools_enabled = true;
+                            self.status_message = Some("Tools enabled".into());
+                        }
+                        "off" => {
+                            self.tools_enabled = false;
+                            self.status_message = Some("Tools disabled".into());
+                        }
+                        _ => {
+                            self.status_message = Some("Usage: /tools [on|off]".into());
+                        }
+                    }
+                } else {
+                    let status = if self.tools_enabled { "on" } else { "off" };
+                    let perms: Vec<String> = ["read_file", "write_file", "edit_file", "list_files", "search_files", "execute"]
+                        .iter()
+                        .map(|t| {
+                            let p = self.tool_executor.permission(t);
+                            format!("  {t}: {p:?}")
+                        })
+                        .collect();
+                    self.status_message = Some(format!("Tools: {status}\n{}", perms.join("\n")));
                 }
             }
             "/quit" | "/q" => {
@@ -473,20 +795,17 @@ impl App {
     }
 
     pub fn cursor_home(&mut self) {
-        // Go to start of current line
         let before = &self.input[..self.cursor_pos];
         self.cursor_pos = before.rfind('\n').map(|i| i + 1).unwrap_or(0);
     }
 
     pub fn cursor_end(&mut self) {
-        // Go to end of current line
         let after = &self.input[self.cursor_pos..];
         self.cursor_pos += after.find('\n').unwrap_or(after.len());
     }
 
     pub fn cursor_word_forward(&mut self) {
         let after = &self.input[self.cursor_pos..];
-        // Skip current word chars, then skip whitespace
         let skip_word = after.find(|c: char| c.is_whitespace()).unwrap_or(after.len());
         let rest = &after[skip_word..];
         let skip_space = rest.find(|c: char| !c.is_whitespace()).unwrap_or(rest.len());
@@ -504,7 +823,6 @@ impl App {
             .unwrap_or(0);
     }
 
-    // Scroll operations
     pub fn scroll_down(&mut self, n: usize) {
         self.scroll_offset = self.scroll_offset.saturating_add(n);
     }
@@ -514,14 +832,13 @@ impl App {
     }
 
     pub fn scroll_to_bottom(&mut self) {
-        self.scroll_offset = usize::MAX; // Will be clamped by renderer
+        self.scroll_offset = usize::MAX;
     }
 
     pub fn scroll_to_top(&mut self) {
         self.scroll_offset = 0;
     }
 
-    // Clipboard
     pub fn paste_clipboard(&mut self) {
         if let Ok(mut clipboard) = arboard::Clipboard::new() {
             if let Ok(text) = clipboard.get_text() {
@@ -541,7 +858,6 @@ impl App {
         }
     }
 
-    // History navigation
     pub fn history_prev(&mut self) {
         if self.input_history.is_empty() {
             return;
@@ -575,7 +891,7 @@ impl App {
         }
         let commands = [
             "/clear", "/new", "/model", "/provider", "/system",
-            "/history", "/help", "/temp", "/save", "/nvim", "/quit",
+            "/history", "/help", "/temp", "/save", "/nvim", "/tools", "/quit",
         ];
         let matches: Vec<&&str> = commands.iter()
             .filter(|c| c.starts_with(&self.input))
@@ -590,7 +906,6 @@ impl App {
         }
     }
 
-    // Overlay operations
     pub fn overlay_scroll_down(&mut self) {
         self.overlay_scroll = self.overlay_scroll.saturating_add(1);
     }
@@ -620,6 +935,8 @@ impl App {
             let _ = self.conversation.save();
         }
         self.messages.clear();
+        self.api_messages.clear();
+        self.tool_invocations.clear();
         self.conversation = Conversation::new();
         self.scroll_offset = 0;
         self.status_message = Some("New conversation".into());
@@ -643,6 +960,8 @@ impl App {
             }
             "clear" | "c" => {
                 self.messages.clear();
+                self.api_messages.clear();
+                self.tool_invocations.clear();
                 self.conversation = Conversation::new();
             }
             "new" | "n" => self.new_conversation(),
@@ -651,8 +970,13 @@ impl App {
                 self.overlay = Overlay::History;
                 self.load_history_list();
             }
+            "tools" => {
+                self.tools_enabled = !self.tools_enabled;
+                self.status_message = Some(format!(
+                    "Tools: {}", if self.tools_enabled { "on" } else { "off" }
+                ));
+            }
             _ => {
-                // Check for :set commands
                 if let Some(rest) = cmd.strip_prefix("set ") {
                     self.handle_set_command(rest);
                 } else if let Some(rest) = cmd.strip_prefix("model ") {
@@ -692,9 +1016,40 @@ impl App {
                 self.config.vim_mode = !self.config.vim_mode;
                 self.status_message = Some(format!("Vim mode: {}", self.config.vim_mode));
             }
+            "tools" => {
+                self.tools_enabled = !self.tools_enabled;
+                self.status_message = Some(format!(
+                    "Tools: {}", if self.tools_enabled { "on" } else { "off" }
+                ));
+            }
             _ => {
                 self.status_message = Some(format!("Unknown setting: {}", parts[0]));
             }
+        }
+    }
+}
+
+/// Format tool arguments for display (public for use in UI).
+pub fn format_tool_args_public(tool: &tools::Tool) -> String {
+    format_tool_args(tool)
+}
+
+/// Format tool arguments for display.
+fn format_tool_args(tool: &tools::Tool) -> String {
+    match tool {
+        tools::Tool::ReadFile { path } => format!("path: {path}"),
+        tools::Tool::WriteFile { path, content } => {
+            format!("path: {path} ({} bytes)", content.len())
+        }
+        tools::Tool::ListFiles { path, pattern } => {
+            format!("path: {path}{}", pattern.as_deref().map(|p| format!(", pattern: {p}")).unwrap_or_default())
+        }
+        tools::Tool::SearchFiles { pattern, path } => {
+            format!("pattern: {pattern}{}", path.as_deref().map(|p| format!(", path: {p}")).unwrap_or_default())
+        }
+        tools::Tool::Execute { command } => format!("$ {command}"),
+        tools::Tool::EditFile { path, old_text, new_text: _ } => {
+            format!("path: {path}, replacing {} chars", old_text.len())
         }
     }
 }
