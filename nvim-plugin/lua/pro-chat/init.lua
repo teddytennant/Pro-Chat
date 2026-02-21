@@ -310,6 +310,129 @@ function M.send_file()
   M.send_raw(prompt)
 end
 
+--- Get text from the visual selection, or the entire buffer if no range was
+--- actively selected (i.e. the command was invoked without a visual range).
+---@param range_given boolean Whether the command was invoked with a visual range.
+---@return string text The selected or full-buffer text.
+local function get_text(range_given)
+  if range_given then
+    -- Yank the visual selection into register z.
+    local saved = vim.fn.getreg("z")
+    vim.cmd('noautocmd normal! gv"zy')
+    local text = vim.fn.getreg("z")
+    vim.fn.setreg("z", saved)
+    return text
+  end
+  -- Fall back to the entire buffer.
+  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+  return table.concat(lines, "\n")
+end
+
+--- Ensure the terminal is running, then send a prompt.
+---@param prompt string The prompt to send.
+local function ensure_and_send(prompt)
+  if not state.chan then
+    M.open()
+  end
+  M.send_raw(prompt)
+end
+
+--- Review the current file's unstaged git changes.
+--- Runs `git diff -- <file>` and sends the diff to pro-chat for review.
+function M.review()
+  local filepath = vim.api.nvim_buf_get_name(0)
+  if filepath == "" then
+    vim.notify("[pro-chat] buffer has no file on disk", vim.log.levels.WARN)
+    return
+  end
+
+  local filename = vim.fn.fnamemodify(filepath, ":t")
+  local diff = vim.fn.system({ "git", "diff", "--", filepath })
+
+  if vim.v.shell_error ~= 0 then
+    vim.notify("[pro-chat] git diff failed (is this file in a git repo?)", vim.log.levels.ERROR)
+    return
+  end
+
+  if diff == nil or vim.trim(diff) == "" then
+    vim.notify("[pro-chat] no changes to review for " .. filename, vim.log.levels.INFO)
+    return
+  end
+
+  local prompt = string.format(
+    "Please review these changes to %s:\n```diff\n%s\n```\n",
+    filename,
+    diff
+  )
+  ensure_and_send(prompt)
+end
+
+--- Explain the visual selection (or the whole buffer).
+---@param range_given boolean Whether a visual range was provided.
+function M.explain(range_given)
+  local filepath = vim.api.nvim_buf_get_name(0)
+  local filename = filepath ~= "" and vim.fn.fnamemodify(filepath, ":t") or "[unsaved buffer]"
+  local filetype = vim.bo.filetype or ""
+  local text = get_text(range_given)
+
+  if vim.trim(text) == "" then
+    vim.notify("[pro-chat] nothing to explain", vim.log.levels.INFO)
+    return
+  end
+
+  local prompt = string.format(
+    "Explain this code from %s:\n```%s\n%s\n```\n",
+    filename,
+    filetype,
+    text
+  )
+  ensure_and_send(prompt)
+end
+
+--- Refactor the visual selection.
+---@param range_given boolean Whether a visual range was provided.
+function M.refactor(range_given)
+  local filepath = vim.api.nvim_buf_get_name(0)
+  local filename = filepath ~= "" and vim.fn.fnamemodify(filepath, ":t") or "[unsaved buffer]"
+  local filetype = vim.bo.filetype or ""
+  local text = get_text(range_given)
+
+  if vim.trim(text) == "" then
+    vim.notify("[pro-chat] nothing to refactor", vim.log.levels.INFO)
+    return
+  end
+
+  local prompt = string.format(
+    "Refactor this code from %s. Improve readability and efficiency:\n```%s\n%s\n```\n",
+    filename,
+    filetype,
+    text
+  )
+  ensure_and_send(prompt)
+end
+
+--- Write tests for the visual selection (or the whole buffer).
+---@param range_given boolean Whether a visual range was provided.
+function M.test(range_given)
+  local filepath = vim.api.nvim_buf_get_name(0)
+  local filename = filepath ~= "" and vim.fn.fnamemodify(filepath, ":t") or "[unsaved buffer]"
+  local filetype = vim.bo.filetype or ""
+  local text = get_text(range_given)
+
+  if vim.trim(text) == "" then
+    vim.notify("[pro-chat] nothing to generate tests for", vim.log.levels.INFO)
+    return
+  end
+
+  local prompt = string.format(
+    "Write tests for this code from %s:\n```%s\n%s\n```\n",
+    filename,
+    filetype,
+    text
+  )
+  ensure_and_send(prompt)
+end
+
 ---------------------------------------------------------------------------
 -- Setup
 ---------------------------------------------------------------------------
@@ -335,6 +458,16 @@ function M.setup(opts)
         end
       end)
     end, { desc = "Pro-Chat: ask about buffer" })
+    vim.keymap.set("n", leader .. "r", M.review, { desc = "Pro-Chat: review file changes" })
+    vim.keymap.set("v", leader .. "e", function()
+      M.explain(true)
+    end, { desc = "Pro-Chat: explain selection" })
+    vim.keymap.set("v", leader .. "f", function()
+      M.refactor(true)
+    end, { desc = "Pro-Chat: refactor selection" })
+    vim.keymap.set("v", leader .. "t", function()
+      M.test(true)
+    end, { desc = "Pro-Chat: test selection" })
   end
 end
 
