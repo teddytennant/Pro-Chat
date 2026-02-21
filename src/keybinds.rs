@@ -38,7 +38,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         InputMode::Normal => handle_normal_mode(app, key),
         InputMode::Insert => handle_insert_mode(app, key),
         InputMode::Command => handle_command_mode(app, key),
-        InputMode::Search => handle_insert_mode(app, key),
+        InputMode::Search => handle_search_mode(app, key),
     }
 }
 
@@ -159,6 +159,21 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> KeyAction {
             KeyAction::Consumed
         }
 
+        // Search
+        (KeyModifiers::NONE, KeyCode::Char('/')) => {
+            app.input_mode = InputMode::Search;
+            app.search_query.clear();
+            KeyAction::Consumed
+        }
+        (KeyModifiers::NONE, KeyCode::Char('n')) => {
+            app.next_search_match();
+            KeyAction::Consumed
+        }
+        (KeyModifiers::SHIFT, KeyCode::Char('N')) => {
+            app.prev_search_match();
+            KeyAction::Consumed
+        }
+
         // Yank (copy) last response
         (KeyModifiers::NONE, KeyCode::Char('y')) => {
             app.yank_last_response();
@@ -275,6 +290,33 @@ fn handle_command_mode(app: &mut App, key: KeyEvent) -> KeyAction {
         }
         KeyCode::Char(c) => {
             app.command_input.push(c);
+            KeyAction::Consumed
+        }
+        _ => KeyAction::None,
+    }
+}
+
+fn handle_search_mode(app: &mut App, key: KeyEvent) -> KeyAction {
+    match key.code {
+        KeyCode::Esc => {
+            app.input_mode = InputMode::Normal;
+            app.search_query.clear();
+            KeyAction::Consumed
+        }
+        KeyCode::Enter => {
+            app.input_mode = InputMode::Normal;
+            app.execute_search();
+            KeyAction::Consumed
+        }
+        KeyCode::Backspace => {
+            app.search_query.pop();
+            if app.search_query.is_empty() {
+                app.input_mode = InputMode::Normal;
+            }
+            KeyAction::Consumed
+        }
+        KeyCode::Char(c) => {
+            app.search_query.push(c);
             KeyAction::Consumed
         }
         _ => KeyAction::None,
