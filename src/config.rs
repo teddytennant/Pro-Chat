@@ -23,6 +23,8 @@ pub struct Config {
     pub neovim: NeovimConfig,
     #[serde(default)]
     pub vim_mode: bool,
+    #[serde(default)]
+    pub last_conversation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +154,7 @@ impl Default for Config {
             theme: default_theme(),
             neovim: NeovimConfig::default(),
             vim_mode: false,
+            last_conversation_id: None,
         }
     }
 }
