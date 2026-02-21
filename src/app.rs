@@ -238,7 +238,7 @@ impl App {
                         match handle_key(self, key) {
                             KeyAction::Quit => {
                                 if !self.messages.is_empty() {
-                                    let _ = self.conversation.save();
+                                    self.save_and_track_conversation();
                                 }
                                 return Ok(());
                             }
@@ -264,7 +264,7 @@ impl App {
                         self.streaming = false;
                         if !self.stream_buffer.is_empty() {
                             self.conversation.add_message("assistant", &self.stream_buffer);
-                            let _ = self.conversation.save();
+                            self.save_and_track_conversation();
                         }
                         self.stream_buffer.clear();
                     }
@@ -789,6 +789,26 @@ impl App {
             "/paste" => {
                 self.paste_clipboard_as_codeblock();
             }
+            "/resume" | "/r" => {
+                if let Some(ref id) = self.config.last_conversation_id.clone() {
+                    match self.load_conversation(id) {
+                        Ok(_) => self.status_message = Some("Resumed last session".into()),
+                        Err(e) => self.status_message = Some(format!("Failed to resume: {e}")),
+                    }
+                } else {
+                    // Fall back to the most recently updated conversation
+                    match Conversation::latest() {
+                        Ok(Some(conv)) => {
+                            let id = conv.id.clone();
+                            match self.load_conversation(&id) {
+                                Ok(_) => self.status_message = Some("Resumed latest conversation".into()),
+                                Err(e) => self.status_message = Some(format!("Failed to resume: {e}")),
+                            }
+                        }
+                        _ => self.status_message = Some("No previous conversation found".into()),
+                    }
+                }
+            }
             "/quit" | "/q" => {
                 self.should_quit = true;
             }
@@ -1122,7 +1142,7 @@ impl App {
         let commands = [
             "/clear", "/new", "/model", "/provider", "/system",
             "/history", "/help", "/temp", "/save", "/nvim", "/tools", "/file",
-            "/context", "/paste", "/quit",
+            "/context", "/paste", "/resume", "/quit",
         ];
         let matches: Vec<&&str> = commands.iter()
             .filter(|c| c.starts_with(&self.input))
@@ -1163,7 +1183,7 @@ impl App {
 
     pub fn new_conversation(&mut self) {
         if !self.messages.is_empty() {
-            let _ = self.conversation.save();
+            self.save_and_track_conversation();
         }
         self.messages.clear();
         self.api_messages.clear();
