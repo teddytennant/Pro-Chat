@@ -28,6 +28,8 @@ pub struct Config {
     pub vim_mode: bool,
     #[serde(default)]
     pub last_conversation_id: Option<String>,
+    #[serde(default = "default_true")]
+    pub notify_on_complete: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -226,6 +228,7 @@ impl Default for Config {
             neovim: NeovimConfig::default(),
             vim_mode: false,
             last_conversation_id: None,
+            notify_on_complete: true,
         }
     }
 }
