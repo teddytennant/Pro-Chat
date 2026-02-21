@@ -8,12 +8,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();
 
     // Main layout: messages area + input + status bar
+    let line_count = app.input.lines().count()
+        + if app.input.ends_with('\n') { 1 } else { 0 };
+    let input_height = (line_count + 2).min(10) as u16;
+    let input_height = input_height.max(3);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(1),      // Messages
-            Constraint::Length(3),    // Input
-            Constraint::Length(1),    // Status bar
+            Constraint::Min(1),              // Messages
+            Constraint::Length(input_height), // Input
+            Constraint::Length(1),            // Status bar
         ])
         .split(area);
 
@@ -233,6 +237,7 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
         InputMode::Normal => Span::styled(" NOR ", Style::default().bg(Color::Rgb(122, 162, 247)).fg(Color::Rgb(26, 27, 38)).add_modifier(Modifier::BOLD)),
         InputMode::Insert => Span::styled(" INS ", Style::default().bg(Color::Rgb(158, 206, 106)).fg(Color::Rgb(26, 27, 38)).add_modifier(Modifier::BOLD)),
         InputMode::Command => Span::styled(" CMD ", Style::default().bg(Color::Rgb(224, 175, 104)).fg(Color::Rgb(26, 27, 38)).add_modifier(Modifier::BOLD)),
+        InputMode::Search => Span::styled(" SRC ", Style::default().bg(Color::Rgb(247, 118, 142)).fg(Color::Rgb(26, 27, 38)).add_modifier(Modifier::BOLD)),
     };
 
     // Build right-side title spans
@@ -259,6 +264,7 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
             InputMode::Normal => Color::Rgb(59, 66, 97),
             InputMode::Insert => Color::Rgb(122, 162, 247),
             InputMode::Command => Color::Rgb(224, 175, 104),
+            InputMode::Search => Color::Rgb(247, 118, 142),
         }))
         .border_type(BorderType::Rounded)
         .title(Line::from(mode_indicator).alignment(Alignment::Left))
@@ -272,10 +278,7 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
             _ => String::new(),
         }
     } else {
-        // Show just the current line of input
-        let lines: Vec<&str> = app.input.lines().collect();
-        let cursor_line = app.input[..app.cursor_pos].matches('\n').count();
-        lines.get(cursor_line).unwrap_or(&"").to_string()
+        app.input.clone()
     };
 
     let style = if app.input.is_empty() && app.input_mode == InputMode::Insert {
@@ -301,8 +304,13 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
                 .unwrap_or(0);
             area.x + 1 + (app.cursor_pos - current_line_start) as u16
         };
-        let cursor_y = area.y + 1;
-        if cursor_x < area.x + area.width - 1 {
+        let cursor_line = if app.input_mode == InputMode::Command {
+            0
+        } else {
+            app.input[..app.cursor_pos].matches('\n').count()
+        };
+        let cursor_y = area.y + 1 + cursor_line as u16;
+        if cursor_x < area.x + area.width - 1 && cursor_y < area.y + area.height - 1 {
             f.set_cursor_position(Position::new(cursor_x, cursor_y));
         }
     }
@@ -426,6 +434,7 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
         Line::from(Span::raw("  /temp <t>    Set temperature")),
         Line::from(Span::raw("  /history     Browse history")),
         Line::from(Span::raw("  /nvim        Connect neovim")),
+        Line::from(Span::raw("  /file <p>    Load file into input")),
         Line::from(Span::raw("  /save        Save config")),
         Line::from(Span::raw("  /quit        Quit")),
         Line::from(""),

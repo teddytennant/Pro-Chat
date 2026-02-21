@@ -38,6 +38,7 @@ pub fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
         InputMode::Normal => handle_normal_mode(app, key),
         InputMode::Insert => handle_insert_mode(app, key),
         InputMode::Command => handle_command_mode(app, key),
+        InputMode::Search => handle_insert_mode(app, key),
     }
 }
 
