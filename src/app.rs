@@ -1,3 +1,4 @@
+use crossterm::event::MouseEventKind;
 use ratatui::prelude::*;
 use tokio::sync::mpsc;
 
@@ -197,7 +198,13 @@ impl App {
                         self.terminal_height = h;
                     }
                     Event::Tick => {}
-                    Event::Mouse(_) => {}
+                    Event::Mouse(mouse) => {
+                        match mouse.kind {
+                            MouseEventKind::ScrollUp => self.scroll_up(3),
+                            MouseEventKind::ScrollDown => self.scroll_down(3),
+                            _ => {}
+                        }
+                    }
                 }
             }
 
