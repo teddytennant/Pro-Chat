@@ -210,7 +210,8 @@ impl ApiClient {
         Ok(())
     }
 
-    pub async fn stream_openai(
+    /// Stream an OpenAI-compatible API call (works for OpenAI, OpenRouter, xAI, etc.).
+    pub async fn stream_openai_compatible(
         &self,
         api_key: &str,
         model: &str,
@@ -219,6 +220,8 @@ impl ApiClient {
         max_tokens: u32,
         temperature: f32,
         tx: mpsc::UnboundedSender<Event>,
+        base_url: &str,
+        extra_headers: &[(&str, &str)],
     ) -> anyhow::Result<()> {
         let mut msgs = Vec::new();
         if let Some(sys) = system_prompt {
@@ -236,13 +239,16 @@ impl ApiClient {
             "messages": msgs,
         });
 
-        let response = self.client
-            .post("https://api.openai.com/v1/chat/completions")
+        let mut req = self.client
+            .post(base_url)
             .header("Authorization", format!("Bearer {api_key}"))
-            .header("content-type", "application/json")
-            .json(&body)
-            .send()
-            .await?;
+            .header("content-type", "application/json");
+
+        for (key, value) in extra_headers {
+            req = req.header(*key, *value);
+        }
+
+        let response = req.json(&body).send().await?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -280,5 +286,23 @@ impl ApiClient {
 
         let _ = tx.send(Event::ApiDone);
         Ok(())
+    }
+
+    pub async fn stream_openai(
+        &self,
+        api_key: &str,
+        model: &str,
+        messages: &[Message],
+        system_prompt: Option<&str>,
+        max_tokens: u32,
+        temperature: f32,
+        tx: mpsc::UnboundedSender<Event>,
+    ) -> anyhow::Result<()> {
+        self.stream_openai_compatible(
+            api_key, model, messages, system_prompt,
+            max_tokens, temperature, tx,
+            "https://api.openai.com/v1/chat/completions",
+            &[],
+        ).await
     }
 }
