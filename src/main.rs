@@ -35,7 +35,7 @@ struct Cli {
     #[arg(short, long)]
     model: Option<String>,
 
-    /// API provider (anthropic, openai)
+    /// API provider (anthropic, openai, openrouter, xai)
     #[arg(long)]
     provider: Option<String>,
 
