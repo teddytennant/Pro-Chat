@@ -9,6 +9,7 @@ mod keybinds;
 mod markdown;
 mod neovim;
 mod history;
+mod tools;
 
 use std::io;
 use clap::Parser;
