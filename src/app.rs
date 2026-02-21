@@ -290,6 +290,10 @@ impl App {
                             self.save_and_track_conversation();
                         }
                         self.stream_buffer.clear();
+                        // Ring terminal bell to notify user the response is complete
+                        if self.config.notify_on_complete {
+                            eprint!("\x07");
+                        }
                     }
                     Event::ApiError(err) => {
                         self.streaming = false;
@@ -1917,4 +1921,23 @@ fn format_tool_args(tool: &tools::Tool) -> String {
             format!("path: {path}, replacing {} chars", old_text.len())
         }
     }
+}
+
+/// Find the longest common prefix among a list of strings.
+fn common_prefix(strings: &[String]) -> Option<String> {
+    if strings.is_empty() {
+        return None;
+    }
+    let first = &strings[0];
+    let mut prefix_len = first.len();
+    for s in &strings[1..] {
+        prefix_len = prefix_len.min(s.len());
+        for (i, (a, b)) in first.chars().zip(s.chars()).enumerate() {
+            if i >= prefix_len || a != b {
+                prefix_len = i;
+                break;
+            }
+        }
+    }
+    Some(first[..prefix_len].to_string())
 }
