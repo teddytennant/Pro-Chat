@@ -431,8 +431,11 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     } else {
         String::new()
     };
-    let msg_count = app.messages.iter().filter(|m| m.role == "user").count();
-    let right_text = format!(" {token_display} tokens{timing_display} | {msg_count}msgs ");
+    let word_count: usize = app.messages.iter()
+        .map(|m| m.content.split_whitespace().count())
+        .sum();
+    let msg_count = app.messages.len();
+    let right_text = format!(" {token_display} tokens{timing_display} | {word_count}w | {msg_count}msgs ");
 
     let left = Line::from(spans);
     let right = Span::styled(right_text, Style::default().fg(c.dim));
@@ -486,6 +489,7 @@ fn draw_help_overlay(f: &mut Frame, app: &App, area: Rect) {
         Line::from(Span::raw("  e            Edit last user message")),
         Line::from(Span::raw("  Ctrl+h       History")),
         Line::from(Span::raw("  Ctrl+n       New conversation")),
+        Line::from(Span::raw("  Ctrl+l       Clear conversation")),
         Line::from(""),
         Line::from(Span::styled("Insert Mode", Style::default().fg(c.user_label).add_modifier(Modifier::BOLD))),
         Line::from(Span::raw("  Enter        Send message")),
