@@ -423,6 +423,8 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
         Line::from(Span::raw("  x            Delete char")),
         Line::from(Span::raw("  dd           Clear input")),
         Line::from(Span::raw("  y            Copy last response")),
+        Line::from(Span::raw("  Ctrl+y       Extract code blocks (1-9 to yank)")),
+        Line::from(Span::raw("  Ctrl+e       Send last code block to nvim")),
         Line::from(Span::raw("  p            Paste from clipboard")),
         Line::from(Span::raw("  ?            This help")),
         Line::from(Span::raw("  /            Search messages")),
