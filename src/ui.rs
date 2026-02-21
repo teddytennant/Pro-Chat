@@ -70,6 +70,10 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
                 "Fast AI chat in your terminal",
                 Style::default().fg(c.dim),
             )),
+            Line::from(Span::styled(
+                format!("{}", std::env::current_dir().unwrap_or_default().display()),
+                Style::default().fg(c.dim).add_modifier(Modifier::DIM),
+            )),
             Line::from(""),
             Line::from(Span::styled(
                 "Type a message to start • ? for help • :q to quit",
@@ -335,9 +339,25 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(c.fg)
     };
 
+    // Calculate visible line window for multiline input scrolling.
+    // The inner height is area.height - 2 (borders top + bottom).
+    let visible_lines = (area.height as usize).saturating_sub(2);
+    let cursor_line_abs = if app.input_mode == InputMode::Command || app.input_mode == InputMode::Search {
+        0usize
+    } else {
+        app.input[..app.cursor_pos].matches('\n').count()
+    };
+
+    let input_scroll_offset = if cursor_line_abs >= visible_lines {
+        cursor_line_abs - visible_lines + 1
+    } else {
+        0
+    };
+
     let input_paragraph = Paragraph::new(display_text)
         .style(style)
-        .block(input_block);
+        .block(input_block)
+        .scroll((input_scroll_offset as u16, 0));
 
     f.render_widget(input_paragraph, area);
 
@@ -354,12 +374,8 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
                 .unwrap_or(0);
             area.x + 1 + (app.cursor_pos - current_line_start) as u16
         };
-        let cursor_line = if app.input_mode == InputMode::Command || app.input_mode == InputMode::Search {
-            0
-        } else {
-            app.input[..app.cursor_pos].matches('\n').count()
-        };
-        let cursor_y = area.y + 1 + cursor_line as u16;
+        let visible_cursor_line = cursor_line_abs.saturating_sub(input_scroll_offset);
+        let cursor_y = area.y + 1 + visible_cursor_line as u16;
         if cursor_x < area.x + area.width - 1 && cursor_y < area.y + area.height - 1 {
             f.set_cursor_position(Position::new(cursor_x, cursor_y));
         }
@@ -400,6 +416,15 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             } else {
                 Color::Rgb(247, 118, 142)
             }),
+        ));
+    }
+
+    // Scroll lock indicator
+    if !app.auto_scroll {
+        spans.push(Span::styled("│", Style::default().fg(c.border)));
+        spans.push(Span::styled(
+            " SCROLL LOCKED ",
+            Style::default().fg(Color::Rgb(247, 118, 142)).add_modifier(Modifier::BOLD),
         ));
     }
 
@@ -543,6 +568,35 @@ fn draw_history_overlay(f: &mut Frame, app: &App, area: Rect) {
     let overlay_area = centered_rect(60, 70, area);
     f.render_widget(Clear, overlay_area);
 
+    let history_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(c.border))
+        .title(Line::from(Span::styled(
+            " History ",
+            Style::default().fg(c.accent).add_modifier(Modifier::BOLD),
+        )))
+        .style(Style::default().bg(c.bg_dark));
+
+    if app.history_list.is_empty() {
+        let empty_msg = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "No saved conversations",
+                Style::default().fg(c.dim),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Start chatting and your conversations will appear here.",
+                Style::default().fg(c.border),
+            )),
+        ])
+        .block(history_block)
+        .alignment(Alignment::Center);
+        f.render_widget(empty_msg, overlay_area);
+        return;
+    }
+
     let items: Vec<ListItem> = app.history_list.iter().enumerate().map(|(i, conv)| {
         let style = if i == app.overlay_scroll {
             Style::default().fg(c.accent).add_modifier(Modifier::BOLD)
@@ -558,18 +612,7 @@ fn draw_history_overlay(f: &mut Frame, app: &App, area: Rect) {
         ]))
     }).collect();
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(c.border))
-                .title(Line::from(Span::styled(
-                    " History ",
-                    Style::default().fg(c.accent).add_modifier(Modifier::BOLD),
-                )))
-                .style(Style::default().bg(c.bg_dark)),
-        );
+    let list = List::new(items).block(history_block);
 
     f.render_widget(list, overlay_area);
 }
