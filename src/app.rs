@@ -448,7 +448,9 @@ impl App {
             }
         }
         self.tool_invocations.push(invocation);
-        self.scroll_to_bottom();
+        if self.auto_scroll {
+            self.scroll_to_bottom();
+        }
     }
 
     async fn handle_tool_confirm_key(&mut self, key: crossterm::event::KeyEvent) {
@@ -1413,10 +1415,12 @@ impl App {
 
     pub fn scroll_up(&mut self, n: usize) {
         self.scroll_offset = self.scroll_offset.saturating_sub(n);
+        self.auto_scroll = false;
     }
 
     pub fn scroll_to_bottom(&mut self) {
         self.scroll_offset = usize::MAX;
+        self.auto_scroll = true;
     }
 
     pub fn scroll_to_top(&mut self) {
