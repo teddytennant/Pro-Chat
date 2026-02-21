@@ -162,6 +162,10 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> KeyAction {
             app.new_conversation();
             KeyAction::Consumed
         }
+        (KeyModifiers::CONTROL, KeyCode::Char('l')) => {
+            app.clear_conversation();
+            KeyAction::Consumed
+        }
 
         // Search
         (KeyModifiers::NONE, KeyCode::Char('/')) => {
