@@ -757,20 +757,55 @@ impl App {
                 if let Some(path_str) = parts.get(1) {
                     let path = std::path::Path::new(path_str.trim());
                     if path.exists() {
-                        match std::fs::read_to_string(path) {
-                            Ok(content) => {
-                                let filename = path.file_name()
-                                    .map(|f| f.to_string_lossy().to_string())
-                                    .unwrap_or_else(|| path_str.to_string());
-                                let ext = path.extension()
-                                    .map(|e| e.to_string_lossy().to_string())
-                                    .unwrap_or_default();
-                                self.input = format!(
-                                    "Here is the contents of `{filename}`:\n```{ext}\n{content}\n```\n"
-                                );
-                                self.cursor_pos = 0;
-                                self.status_message = Some(format!("Loaded {filename} into input"));
-                                return Ok(());
+                        // Check for binary file: look for null bytes in first 512 bytes
+                        match std::fs::read(path) {
+                            Ok(raw_bytes) => {
+                                let check_len = raw_bytes.len().min(512);
+                                if raw_bytes[..check_len].contains(&0u8) {
+                                    self.status_message = Some(format!(
+                                        "Cannot load binary file: {}", path_str.trim()
+                                    ));
+                                } else {
+                                    let file_size = raw_bytes.len();
+                                    let filename = path.file_name()
+                                        .map(|f| f.to_string_lossy().to_string())
+                                        .unwrap_or_else(|| path_str.to_string());
+                                    let ext = path.extension()
+                                        .map(|e| e.to_string_lossy().to_string())
+                                        .unwrap_or_default();
+
+                                    let max_size: usize = 100 * 1024; // 100KB
+                                    let mut content = String::from_utf8_lossy(&raw_bytes).to_string();
+                                    let truncated = if file_size > max_size {
+                                        content.truncate(max_size);
+                                        true
+                                    } else {
+                                        false
+                                    };
+
+                                    let size_display = if file_size >= 1024 * 1024 {
+                                        format!("{:.1} MB", file_size as f64 / (1024.0 * 1024.0))
+                                    } else if file_size >= 1024 {
+                                        format!("{:.1} KB", file_size as f64 / 1024.0)
+                                    } else {
+                                        format!("{} B", file_size)
+                                    };
+
+                                    if truncated {
+                                        self.input = format!(
+                                            "Here is the contents of `{filename}`:\n```{ext}\n{content}\n```\n\n**Note: File was truncated at 100KB. Original size: {size_display}**\n"
+                                        );
+                                    } else {
+                                        self.input = format!(
+                                            "Here is the contents of `{filename}`:\n```{ext}\n{content}\n```\n"
+                                        );
+                                    }
+                                    self.cursor_pos = 0;
+                                    self.status_message = Some(format!(
+                                        "Loaded {filename} ({size_display}) into input"
+                                    ));
+                                    return Ok(());
+                                }
                             }
                             Err(e) => {
                                 self.status_message = Some(format!("Error reading file: {e}"));
@@ -806,6 +841,29 @@ impl App {
                             }
                         }
                         _ => self.status_message = Some("No previous conversation found".into()),
+                    }
+                }
+            }
+            "/diff" | "/d" => {
+                match std::process::Command::new("git")
+                    .arg("diff")
+                    .output()
+                {
+                    Ok(output) => {
+                        let diff_output = String::from_utf8_lossy(&output.stdout).to_string();
+                        if diff_output.trim().is_empty() {
+                            self.status_message = Some("No changes detected (git diff is empty)".into());
+                        } else {
+                            self.input = format!(
+                                "Here are my current git changes:\n```diff\n{diff_output}\n```\nPlease review these changes.\n"
+                            );
+                            self.cursor_pos = 0;
+                            self.status_message = Some("Loaded git diff into input".into());
+                            return Ok(());
+                        }
+                    }
+                    Err(e) => {
+                        self.status_message = Some(format!("Failed to run git diff: {e}"));
                     }
                 }
             }
@@ -1142,7 +1200,7 @@ impl App {
         let commands = [
             "/clear", "/new", "/model", "/provider", "/system",
             "/history", "/help", "/temp", "/save", "/nvim", "/tools", "/file",
-            "/context", "/paste", "/resume", "/quit",
+            "/context", "/paste", "/resume", "/diff", "/quit",
         ];
         let matches: Vec<&&str> = commands.iter()
             .filter(|c| c.starts_with(&self.input))
