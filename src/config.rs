@@ -15,7 +15,7 @@ pub struct Config {
     pub max_tokens: u32,
     #[serde(default = "default_temperature")]
     pub temperature: f32,
-    #[serde(default)]
+    #[serde(default = "default_system_prompt")]
     pub system_prompt: Option<String>,
     #[serde(default = "default_theme")]
     pub theme: Theme,
@@ -54,6 +54,9 @@ fn default_model() -> String { "claude-sonnet-4-20250514".into() }
 fn default_max_tokens() -> u32 { 8192 }
 fn default_temperature() -> f32 { 0.7 }
 fn default_true() -> bool { true }
+fn default_system_prompt() -> Option<String> {
+    Some("You are a helpful AI assistant. When writing code, you are precise and produce clean, working code. You format responses using markdown. When asked to edit files or write code, use the available tools to read, write, and edit files directly. Be concise but thorough.".into())
+}
 
 fn default_accent_color() -> String { "#7aa2f7".into() }
 fn default_user_color() -> String { "#9ece6a".into() }
@@ -145,7 +148,7 @@ impl Default for Config {
             openai_api_key: None,
             max_tokens: default_max_tokens(),
             temperature: default_temperature(),
-            system_prompt: None,
+            system_prompt: default_system_prompt(),
             theme: default_theme(),
             neovim: NeovimConfig::default(),
             vim_mode: false,

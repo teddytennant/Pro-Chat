@@ -17,6 +17,7 @@ pub enum InputMode {
     Normal,
     Insert,
     Command,
+    Search,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -65,6 +66,14 @@ pub struct App {
     pub api_messages: Vec<Message>,
     /// Whether tools are enabled for this session
     pub tools_enabled: bool,
+    /// Search query string (for / search mode)
+    pub search_query: String,
+    /// Indices of messages matching the search
+    pub search_matches: Vec<usize>,
+    /// Current search match index
+    pub search_match_idx: usize,
+    /// Tick counter for animations
+    pub tick_count: u64,
     api_client: ApiClient,
     event_tx: Option<mpsc::UnboundedSender<Event>>,
 }
@@ -119,6 +128,10 @@ impl App {
             tool_invocations: Vec::new(),
             api_messages: Vec::new(),
             tools_enabled: true,
+            search_query: String::new(),
+            search_matches: Vec::new(),
+            search_match_idx: 0,
+            tick_count: 0,
             api_client: ApiClient::new(),
             event_tx: None,
         }
@@ -235,7 +248,9 @@ impl App {
                     Event::Resize(_, h) => {
                         self.terminal_height = h;
                     }
-                    Event::Tick => {}
+                    Event::Tick => {
+                        self.tick_count = self.tick_count.wrapping_add(1);
+                    }
                     Event::Mouse(mouse) => {
                         match mouse.kind {
                             MouseEventKind::ScrollUp => self.scroll_up(3),
@@ -701,6 +716,42 @@ impl App {
                     self.status_message = Some(format!("Tools: {status}\n{}", perms.join("\n")));
                 }
             }
+            "/file" | "/f" => {
+                if let Some(path_str) = parts.get(1) {
+                    let path = std::path::Path::new(path_str.trim());
+                    if path.exists() {
+                        match std::fs::read_to_string(path) {
+                            Ok(content) => {
+                                let filename = path.file_name()
+                                    .map(|f| f.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| path_str.to_string());
+                                let ext = path.extension()
+                                    .map(|e| e.to_string_lossy().to_string())
+                                    .unwrap_or_default();
+                                self.input = format!(
+                                    "Here is the contents of `{filename}`:\n```{ext}\n{content}\n```\n"
+                                );
+                                self.cursor_pos = 0;
+                                self.status_message = Some(format!("Loaded {filename} into input"));
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                self.status_message = Some(format!("Error reading file: {e}"));
+                            }
+                        }
+                    } else {
+                        self.status_message = Some(format!("File not found: {}", path_str.trim()));
+                    }
+                } else {
+                    self.status_message = Some("Usage: /file <path>".into());
+                }
+            }
+            "/context" | "/ctx" => {
+                self.load_project_context();
+            }
+            "/paste" => {
+                self.paste_clipboard_as_codeblock();
+            }
             "/quit" | "/q" => {
                 self.should_quit = true;
             }
@@ -839,6 +890,64 @@ impl App {
         self.scroll_offset = 0;
     }
 
+    pub fn execute_search(&mut self) {
+        self.search_matches.clear();
+        self.search_match_idx = 0;
+        if self.search_query.is_empty() {
+            return;
+        }
+        let query = self.search_query.to_lowercase();
+        for (i, msg) in self.messages.iter().enumerate() {
+            if msg.content.to_lowercase().contains(&query) {
+                self.search_matches.push(i);
+            }
+        }
+        if !self.search_matches.is_empty() {
+            self.scroll_to_match(0);
+            self.status_message = Some(format!(
+                "/{}: match {}/{}",
+                self.search_query, 1, self.search_matches.len()
+            ));
+        } else {
+            self.status_message = Some(format!("Pattern not found: {}", self.search_query));
+        }
+    }
+
+    pub fn next_search_match(&mut self) {
+        if self.search_matches.is_empty() {
+            return;
+        }
+        self.search_match_idx = (self.search_match_idx + 1) % self.search_matches.len();
+        self.scroll_to_match(self.search_match_idx);
+        self.status_message = Some(format!(
+            "/{}: match {}/{}",
+            self.search_query, self.search_match_idx + 1, self.search_matches.len()
+        ));
+    }
+
+    pub fn prev_search_match(&mut self) {
+        if self.search_matches.is_empty() {
+            return;
+        }
+        if self.search_match_idx == 0 {
+            self.search_match_idx = self.search_matches.len() - 1;
+        } else {
+            self.search_match_idx -= 1;
+        }
+        self.scroll_to_match(self.search_match_idx);
+        self.status_message = Some(format!(
+            "/{}: match {}/{}",
+            self.search_query, self.search_match_idx + 1, self.search_matches.len()
+        ));
+    }
+
+    fn scroll_to_match(&mut self, match_idx: usize) {
+        if let Some(&msg_idx) = self.search_matches.get(match_idx) {
+            let estimated_line = msg_idx * 4;
+            self.scroll_offset = estimated_line;
+        }
+    }
+
     pub fn paste_clipboard(&mut self) {
         if let Ok(mut clipboard) = arboard::Clipboard::new() {
             if let Ok(text) = clipboard.get_text() {
@@ -891,7 +1000,8 @@ impl App {
         }
         let commands = [
             "/clear", "/new", "/model", "/provider", "/system",
-            "/history", "/help", "/temp", "/save", "/nvim", "/tools", "/quit",
+            "/history", "/help", "/temp", "/save", "/nvim", "/tools", "/file",
+            "/context", "/paste", "/quit",
         ];
         let matches: Vec<&&str> = commands.iter()
             .filter(|c| c.starts_with(&self.input))
@@ -940,6 +1050,75 @@ impl App {
         self.conversation = Conversation::new();
         self.scroll_offset = 0;
         self.status_message = Some("New conversation".into());
+    }
+
+    pub fn load_project_context(&mut self) {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let dir_name = cwd.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| cwd.display().to_string());
+
+        // Get project file listing
+        let file_listing = std::process::Command::new("find")
+            .arg(".")
+            .args([
+                "-name", "*.rs",
+                "-o", "-name", "*.py",
+                "-o", "-name", "*.js",
+                "-o", "-name", "*.ts",
+                "-o", "-name", "*.go",
+                "-o", "-name", "*.toml",
+                "-o", "-name", "*.json",
+                "-o", "-name", "*.yaml",
+                "-o", "-name", "*.yml",
+                "-o", "-name", "Makefile",
+                "-o", "-name", "Dockerfile",
+            ])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .unwrap_or_default();
+
+        // Take first 50 lines
+        let files: String = file_listing
+            .lines()
+            .take(50)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let context = format!(
+            "Project directory: {dir_name}\nWorking directory: {}\n\nProject files:\n{files}",
+            cwd.display()
+        );
+
+        // Prepend context to the system prompt
+        let existing_prompt = self.config.system_prompt.clone().unwrap_or_default();
+        self.config.system_prompt = Some(format!(
+            "{existing_prompt}\n\n--- Project Context ---\n{context}"
+        ));
+
+        self.status_message = Some(format!("Loaded project context for '{dir_name}'"));
+    }
+
+    pub fn paste_clipboard_as_codeblock(&mut self) {
+        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+            match clipboard.get_text() {
+                Ok(text) if !text.is_empty() => {
+                    let codeblock = format!("```\n{text}\n```");
+                    self.input.push_str(&codeblock);
+                    self.cursor_pos = self.input.len();
+                    self.status_message = Some("Clipboard pasted as code block".into());
+                }
+                Ok(_) => {
+                    self.status_message = Some("Clipboard is empty".into());
+                }
+                Err(e) => {
+                    self.status_message = Some(format!("Failed to read clipboard: {e}"));
+                }
+            }
+        } else {
+            self.status_message = Some("Failed to access clipboard".into());
+        }
     }
 
     pub fn load_history_list(&mut self) {
