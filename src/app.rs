@@ -1076,6 +1076,37 @@ impl App {
                     self.status_message = Some(format!("Current theme: {}", self.config.theme_name));
                 }
             }
+            "/retry" => {
+                // Handled specially: set status and return so the caller
+                // can invoke the async retry_last method.
+                self.input.clear();
+                self.cursor_pos = 0;
+                // We cannot call async from here, so remove the last assistant
+                // message and set a flag via status_message that retry is needed.
+                // Instead, inline the sync part and leave it to the user to re-send.
+                if self.streaming {
+                    self.status_message = Some("Cannot retry while streaming".into());
+                } else if self.messages.last().map_or(true, |m| m.role != "assistant") {
+                    self.status_message = Some("No assistant message to retry".into());
+                } else {
+                    // Remove the last assistant message
+                    self.messages.pop();
+                    if let Some(pos) = self.api_messages.iter().rposition(|m| m.role == "assistant") {
+                        self.api_messages.remove(pos);
+                    }
+                    if let Some(pos) = self.conversation.messages.iter().rposition(|m| m.role == "assistant") {
+                        self.conversation.messages.remove(pos);
+                    }
+                    self.status_message = Some("Removed last response. Use Ctrl+r to regenerate, or re-send your message.".into());
+                }
+                return Ok(());
+            }
+            "/edit" => {
+                self.input.clear();
+                self.cursor_pos = 0;
+                self.edit_last_message();
+                return Ok(());
+            }
             "/quit" | "/q" => {
                 self.should_quit = true;
             }
@@ -1150,65 +1181,6 @@ impl App {
         }
         self.stream_buffer.clear();
         self.status_message = Some("Stream cancelled".into());
-    }
-
-    /// Retry the last user message by resending it.
-    pub async fn retry_last(&mut self) -> anyhow::Result<()> {
-        // Find the last user message
-        if let Some(last_user_content) = self.messages.iter().rev()
-            .find(|m| m.role == "user")
-            .map(|m| m.content.clone())
-        {
-            // Remove the last assistant message if it exists
-            if let Some(last) = self.messages.last() {
-                if last.role == "assistant" {
-                    self.messages.pop();
-                    self.api_messages.pop();
-                }
-            }
-            // Remove the last user message
-            if let Some(last) = self.messages.last() {
-                if last.role == "user" {
-                    self.messages.pop();
-                    self.api_messages.pop();
-                }
-            }
-            // Re-send
-            self.input = last_user_content;
-            self.cursor_pos = self.input.len();
-            self.send_message().await?;
-        } else {
-            self.status_message = Some("No message to retry".into());
-        }
-        Ok(())
-    }
-
-    /// Load the last user message back into the input for editing.
-    pub fn edit_last_message(&mut self) {
-        if let Some(last_user_content) = self.messages.iter().rev()
-            .find(|m| m.role == "user")
-            .map(|m| m.content.clone())
-        {
-            // Remove the last assistant response if present
-            if let Some(last) = self.messages.last() {
-                if last.role == "assistant" {
-                    self.messages.pop();
-                    self.api_messages.pop();
-                }
-            }
-            // Remove the last user message
-            if let Some(last) = self.messages.last() {
-                if last.role == "user" {
-                    self.messages.pop();
-                    self.api_messages.pop();
-                }
-            }
-            self.input = last_user_content;
-            self.cursor_pos = self.input.len();
-            self.status_message = Some("Editing last message".into());
-        } else {
-            self.status_message = Some("No message to edit".into());
-        }
     }
 
     // Text editing operations
@@ -1523,7 +1495,8 @@ impl App {
         let commands = [
             "/clear", "/new", "/model", "/provider", "/system",
             "/history", "/help", "/temp", "/save", "/nvim", "/tools", "/file",
-            "/context", "/paste", "/resume", "/diff", "/export", "/theme", "/quit",
+            "/context", "/paste", "/resume", "/diff", "/export", "/theme",
+            "/retry", "/edit", "/quit",
         ];
         let matches: Vec<&&str> = commands.iter()
             .filter(|c| c.starts_with(&self.input))
