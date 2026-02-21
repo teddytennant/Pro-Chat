@@ -391,6 +391,10 @@ fn handle_overlay_key(app: &mut App, key: KeyEvent) -> KeyAction {
             app.overlay_select();
             KeyAction::Consumed
         }
+        KeyCode::Char('d') if app.overlay == Overlay::History => {
+            app.delete_history_entry();
+            KeyAction::Consumed
+        }
         _ => KeyAction::None,
     }
 }
