@@ -86,6 +86,12 @@ pub struct App {
     pub stream_start_time: Option<std::time::Instant>,
     /// Duration of the last completed response
     pub last_response_time: Option<std::time::Duration>,
+    /// Whether to auto-scroll to bottom on new content
+    pub auto_scroll: bool,
+    /// Undo stack for input field: (input_text, cursor_pos)
+    pub undo_stack: Vec<(String, usize)>,
+    /// Redo stack for input field: (input_text, cursor_pos)
+    pub redo_stack: Vec<(String, usize)>,
     api_client: ApiClient,
     event_tx: Option<mpsc::UnboundedSender<Event>>,
 }
@@ -154,6 +160,9 @@ impl App {
             tick_count: 0,
             stream_start_time: None,
             last_response_time: None,
+            auto_scroll: true,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
             api_client: ApiClient::new(),
             event_tx: None,
         };
@@ -278,7 +287,9 @@ impl App {
                                 last.content = self.stream_buffer.clone();
                             }
                         }
-                        self.scroll_to_bottom();
+                        if self.auto_scroll {
+                            self.scroll_to_bottom();
+                        }
                     }
                     Event::ApiDone => {
                         self.streaming = false;
@@ -1165,6 +1176,18 @@ impl App {
                     self.status_message = Some("Usage: /run <command>".into());
                 }
             }
+            "/undo" => {
+                self.input.clear();
+                self.cursor_pos = 0;
+                self.undo();
+                return Ok(());
+            }
+            "/redo" => {
+                self.input.clear();
+                self.cursor_pos = 0;
+                self.redo();
+                return Ok(());
+            }
             "/quit" | "/q" => {
                 self.should_quit = true;
             }
@@ -1241,19 +1264,57 @@ impl App {
         self.status_message = Some("Stream cancelled".into());
     }
 
+    // Undo/redo support
+    /// Save the current input state to the undo stack and clear the redo stack.
+    /// Called before any editing operation.
+    fn save_undo_state(&mut self) {
+        self.undo_stack.push((self.input.clone(), self.cursor_pos));
+        if self.undo_stack.len() > 100 {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+    }
+
+    /// Undo the last input editing operation.
+    pub fn undo(&mut self) {
+        if let Some((text, pos)) = self.undo_stack.pop() {
+            self.redo_stack.push((self.input.clone(), self.cursor_pos));
+            self.input = text;
+            self.cursor_pos = pos;
+            self.status_message = Some("Undo".into());
+        } else {
+            self.status_message = Some("Nothing to undo".into());
+        }
+    }
+
+    /// Redo the last undone input editing operation.
+    pub fn redo(&mut self) {
+        if let Some((text, pos)) = self.redo_stack.pop() {
+            self.undo_stack.push((self.input.clone(), self.cursor_pos));
+            self.input = text;
+            self.cursor_pos = pos;
+            self.status_message = Some("Redo".into());
+        } else {
+            self.status_message = Some("Nothing to redo".into());
+        }
+    }
+
     // Text editing operations
     pub fn insert_char(&mut self, c: char) {
+        self.save_undo_state();
         self.input.insert(self.cursor_pos, c);
         self.cursor_pos += c.len_utf8();
     }
 
     pub fn insert_newline(&mut self) {
+        self.save_undo_state();
         self.input.insert(self.cursor_pos, '\n');
         self.cursor_pos += 1;
     }
 
     pub fn delete_char_before_cursor(&mut self) {
         if self.cursor_pos > 0 {
+            self.save_undo_state();
             let prev = self.input[..self.cursor_pos]
                 .char_indices()
                 .next_back()
@@ -1266,6 +1327,7 @@ impl App {
 
     pub fn delete_char_at_cursor(&mut self) {
         if self.cursor_pos < self.input.len() {
+            self.save_undo_state();
             self.input.remove(self.cursor_pos);
         }
     }
@@ -1274,6 +1336,7 @@ impl App {
         if self.cursor_pos == 0 {
             return;
         }
+        self.save_undo_state();
         let before = &self.input[..self.cursor_pos];
         let trimmed = before.trim_end();
         let word_start = trimmed.rfind(|c: char| c.is_whitespace())
@@ -1284,11 +1347,13 @@ impl App {
     }
 
     pub fn delete_to_start(&mut self) {
+        self.save_undo_state();
         self.input = self.input[self.cursor_pos..].to_string();
         self.cursor_pos = 0;
     }
 
     pub fn clear_input(&mut self) {
+        self.save_undo_state();
         self.input.clear();
         self.cursor_pos = 0;
     }
@@ -1419,8 +1484,12 @@ impl App {
     pub fn paste_clipboard(&mut self) {
         if let Ok(mut clipboard) = arboard::Clipboard::new() {
             if let Ok(text) = clipboard.get_text() {
+                // save_undo_state is called by insert_char, but we save once
+                // here so the entire paste can be undone in a single step.
+                self.save_undo_state();
                 for c in text.chars() {
-                    self.insert_char(c);
+                    self.input.insert(self.cursor_pos, c);
+                    self.cursor_pos += c.len_utf8();
                 }
             }
         }
@@ -1564,7 +1633,7 @@ impl App {
             "/clear", "/new", "/model", "/models", "/provider", "/system",
             "/history", "/help", "/temp", "/save", "/nvim", "/tools", "/file",
             "/context", "/paste", "/resume", "/diff", "/export", "/theme",
-            "/retry", "/edit", "/quit", "/run",
+            "/retry", "/edit", "/quit", "/run", "/undo", "/redo",
         ];
         let matches: Vec<&&str> = commands.iter()
             .filter(|c| c.starts_with(&self.input))
