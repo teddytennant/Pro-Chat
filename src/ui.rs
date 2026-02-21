@@ -3,7 +3,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 use chrono::Local;
 
-use crate::app::{App, InputMode, Overlay};
+use crate::app::{App, InputMode, Overlay, SetupState, SetupStep};
 use crate::markdown;
 
 const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -39,6 +39,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         Overlay::History => draw_history_overlay(f, app, area),
         Overlay::Settings => draw_settings_overlay(f, app, area),
         Overlay::ToolConfirm => draw_tool_confirm_overlay(f, app, area),
+        Overlay::Setup => draw_setup_overlay(f, app, area),
         Overlay::None => {}
     }
 }
@@ -602,6 +603,7 @@ fn draw_help_overlay(f: &mut Frame, app: &App, area: Rect) {
         Line::from(Span::raw("  /theme <t>   Switch color theme")),
         Line::from(Span::raw("  /retry       Regenerate last response")),
         Line::from(Span::raw("  /edit        Edit last user message")),
+        Line::from(Span::raw("  /setup       Provider setup wizard")),
         Line::from(Span::raw("  /save        Save config")),
         Line::from(Span::raw("  /quit        Quit")),
         Line::from(""),
@@ -776,6 +778,186 @@ fn draw_tool_confirm_overlay(f: &mut Frame, app: &App, area: Rect) {
                 .title(Line::from(Span::styled(
                     " Confirm ",
                     Style::default().fg(c.warning).add_modifier(Modifier::BOLD),
+                )))
+                .style(Style::default().bg(c.bg_dark)),
+        )
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(p, overlay_area);
+}
+
+fn draw_setup_overlay(f: &mut Frame, app: &App, area: Rect) {
+    let c = app.colors();
+    let overlay_area = centered_rect(50, 60, area);
+    f.render_widget(Clear, overlay_area);
+
+    let state = &app.setup_state;
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    match state.step {
+        SetupStep::PickProvider => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Choose your AI provider:",
+                Style::default().fg(c.fg),
+            )));
+            lines.push(Line::from(""));
+
+            for (i, (_, label, icon)) in SetupState::providers().iter().enumerate() {
+                let selected = i == state.selected_provider;
+                let prefix = if selected { "  ▸ " } else { "    " };
+                let style = if selected {
+                    Style::default().fg(c.accent).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(c.fg)
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, style),
+                    Span::styled(format!("{icon} "), style),
+                    Span::styled(label.to_string(), style),
+                ]));
+            }
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("  [j/k]", Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
+                Span::styled(" navigate  ", Style::default().fg(c.dim)),
+                Span::styled("[Enter]", Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
+                Span::styled(" select  ", Style::default().fg(c.dim)),
+                Span::styled("[Esc]", Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
+                Span::styled(" close", Style::default().fg(c.dim)),
+            ]));
+        }
+        SetupStep::EnterApiKey => {
+            let provider_id = state.current_provider_id();
+            let (_, label, icon) = SetupState::providers()[state.selected_provider];
+            let url = SetupState::provider_url(provider_id);
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {icon} "), Style::default().fg(c.accent)),
+                Span::styled(
+                    label.to_string(),
+                    Style::default().fg(c.accent).add_modifier(Modifier::BOLD),
+                ),
+            ]));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Paste your API key:",
+                Style::default().fg(c.fg),
+            )));
+            lines.push(Line::from(""));
+
+            // Show the key input (masked)
+            let display_key = if state.key_input.is_empty() {
+                "  │                        │".to_string()
+            } else if state.key_input.len() <= 8 {
+                format!("  │ {}{}│",
+                    &state.key_input,
+                    " ".repeat(23usize.saturating_sub(state.key_input.len())))
+            } else {
+                let visible: String = state.key_input.chars().take(8).collect();
+                format!("  │ {}...{}│",
+                    visible,
+                    " ".repeat(20usize.saturating_sub(visible.len() + 3)))
+            };
+            lines.push(Line::from(Span::styled(
+                "  ┌────────────────────────┐",
+                Style::default().fg(c.border),
+            )));
+            lines.push(Line::from(Span::styled(
+                display_key,
+                Style::default().fg(c.fg),
+            )));
+            lines.push(Line::from(Span::styled(
+                "  └────────────────────────┘",
+                Style::default().fg(c.border),
+            )));
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Get one at:",
+                Style::default().fg(c.dim),
+            )));
+            lines.push(Line::from(Span::styled(
+                format!("  {url}"),
+                Style::default().fg(c.accent),
+            )));
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("  [Enter]", Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
+                Span::styled(" confirm  ", Style::default().fg(c.dim)),
+                Span::styled("[Ctrl+V]", Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
+                Span::styled(" paste  ", Style::default().fg(c.dim)),
+                Span::styled("[Esc]", Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
+                Span::styled(" back", Style::default().fg(c.dim)),
+            ]));
+        }
+        SetupStep::PickModel => {
+            let provider_id = state.current_provider_id();
+            let (_, label, icon) = SetupState::providers()[state.selected_provider];
+            let models = SetupState::models_for_provider(provider_id);
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {icon} "), Style::default().fg(c.accent)),
+                Span::styled(
+                    label.to_string(),
+                    Style::default().fg(c.accent).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("  ✓ Key set", Style::default().fg(c.success)),
+            ]));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Choose a model:",
+                Style::default().fg(c.fg),
+            )));
+            lines.push(Line::from(""));
+
+            for (i, (model_id, desc)) in models.iter().enumerate() {
+                let selected = i == state.selected_model;
+                let prefix = if selected { "  ▸ " } else { "    " };
+                let style = if selected {
+                    Style::default().fg(c.accent).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(c.fg)
+                };
+                // Show a short display name (strip provider prefix for openrouter)
+                let display_name = if model_id.contains('/') {
+                    desc
+                } else {
+                    model_id
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, style),
+                    Span::styled(display_name.to_string(), style),
+                    Span::styled(format!(" ({desc})"), Style::default().fg(c.dim)),
+                ]));
+            }
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("  [j/k]", Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
+                Span::styled(" navigate  ", Style::default().fg(c.dim)),
+                Span::styled("[Enter]", Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
+                Span::styled(" select  ", Style::default().fg(c.dim)),
+                Span::styled("[Esc]", Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
+                Span::styled(" back", Style::default().fg(c.dim)),
+            ]));
+        }
+    }
+
+    let p = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(c.accent))
+                .title(Line::from(Span::styled(
+                    " Setup ",
+                    Style::default().fg(c.accent).add_modifier(Modifier::BOLD),
                 )))
                 .style(Style::default().bg(c.bg_dark)),
         )

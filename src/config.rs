@@ -221,6 +221,37 @@ impl Config {
         }
     }
 
+    /// Check whether the current provider has an API key set (config or env).
+    pub fn has_api_key(&self) -> bool {
+        self.api_key_from_env().is_some()
+    }
+
+    /// Return the API key field for a specific provider (from config or env).
+    pub fn api_key_for_provider(&self, provider: &str) -> Option<String> {
+        match provider {
+            "anthropic" => self.anthropic_api_key.clone()
+                .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok()),
+            "openai" => self.openai_api_key.clone()
+                .or_else(|| std::env::var("OPENAI_API_KEY").ok()),
+            "openrouter" => self.openrouter_api_key.clone()
+                .or_else(|| std::env::var("OPENROUTER_API_KEY").ok()),
+            "xai" => self.xai_api_key.clone()
+                .or_else(|| std::env::var("XAI_API_KEY").ok()),
+            _ => None,
+        }
+    }
+
+    /// Set the API key for a specific provider.
+    pub fn set_api_key_for_provider(&mut self, provider: &str, key: String) {
+        match provider {
+            "anthropic" => self.anthropic_api_key = Some(key),
+            "openai" => self.openai_api_key = Some(key),
+            "openrouter" => self.openrouter_api_key = Some(key),
+            "xai" => self.xai_api_key = Some(key),
+            _ => {}
+        }
+    }
+
     pub fn data_dir() -> PathBuf {
         dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("."))

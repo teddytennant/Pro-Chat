@@ -27,6 +27,85 @@ pub enum Overlay {
     History,
     Settings,
     ToolConfirm,
+    Setup,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum SetupStep {
+    PickProvider,
+    EnterApiKey,
+    PickModel,
+}
+
+pub struct SetupState {
+    pub step: SetupStep,
+    pub selected_provider: usize,
+    pub selected_model: usize,
+    pub key_input: String,
+    pub key_confirmed: bool,
+}
+
+impl SetupState {
+    pub fn new() -> Self {
+        Self {
+            step: SetupStep::PickProvider,
+            selected_provider: 0,
+            selected_model: 0,
+            key_input: String::new(),
+            key_confirmed: false,
+        }
+    }
+
+    pub fn providers() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[
+            ("anthropic", "Anthropic (Claude)", "▲"),
+            ("openai", "OpenAI (GPT)", "◎"),
+            ("openrouter", "OpenRouter (Any model)", "⬡"),
+            ("xai", "xAI (Grok)", "✕"),
+        ]
+    }
+
+    pub fn models_for_provider(provider: &str) -> Vec<(&'static str, &'static str)> {
+        match provider {
+            "anthropic" => vec![
+                ("claude-sonnet-4-20250514", "balanced"),
+                ("claude-opus-4-20250514", "powerful"),
+                ("claude-haiku-4-5-20251001", "fast"),
+            ],
+            "openai" => vec![
+                ("gpt-4o", "flagship"),
+                ("gpt-4o-mini", "fast"),
+            ],
+            "openrouter" => vec![
+                ("deepseek/deepseek-chat-v3-0324", "deepseek-chat-v3"),
+                ("meta-llama/llama-4-maverick", "llama-4-maverick"),
+                ("google/gemini-2.5-pro-preview", "gemini-2.5-pro"),
+                ("mistralai/mistral-large-latest", "mistral-large"),
+            ],
+            "xai" => vec![
+                ("grok-3", "powerful"),
+                ("grok-3-mini", "fast"),
+                ("grok-2", "balanced"),
+            ],
+            _ => vec![],
+        }
+    }
+
+    pub fn provider_url(provider: &str) -> &'static str {
+        match provider {
+            "anthropic" => "console.anthropic.com",
+            "openai" => "platform.openai.com",
+            "openrouter" => "openrouter.ai/keys",
+            "xai" => "console.x.ai",
+            _ => "",
+        }
+    }
+
+    pub fn current_provider_id(&self) -> &'static str {
+        Self::providers().get(self.selected_provider)
+            .map(|(id, _, _)| *id)
+            .unwrap_or("anthropic")
+    }
 }
 
 /// Represents a tool invocation displayed in the chat.
@@ -92,6 +171,7 @@ pub struct App {
     pub undo_stack: Vec<(String, usize)>,
     /// Redo stack for input field: (input_text, cursor_pos)
     pub redo_stack: Vec<(String, usize)>,
+    pub setup_state: SetupState,
     api_client: ApiClient,
     event_tx: Option<mpsc::UnboundedSender<Event>>,
 }
@@ -163,6 +243,7 @@ impl App {
             auto_scroll: true,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            setup_state: SetupState::new(),
             api_client: ApiClient::new(),
             event_tx: None,
         };
@@ -172,6 +253,12 @@ impl App {
             if app.load_conversation(id).is_ok() {
                 app.status_message = Some("Restored previous session".into());
             }
+        }
+
+        // Auto-trigger setup wizard if no API key is configured
+        if !app.config.has_api_key() {
+            app.overlay = Overlay::Setup;
+            app.setup_state = SetupState::new();
         }
 
         app
@@ -255,6 +342,12 @@ impl App {
                         // Handle tool confirmation overlay keys
                         if self.overlay == Overlay::ToolConfirm {
                             self.handle_tool_confirm_key(key).await;
+                            continue;
+                        }
+
+                        // Handle setup overlay keys
+                        if self.overlay == Overlay::Setup {
+                            self.handle_setup_key(key);
                             continue;
                         }
 
@@ -517,6 +610,101 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    fn handle_setup_key(&mut self, key: crossterm::event::KeyEvent) {
+        use crossterm::event::KeyCode;
+
+        match &self.setup_state.step {
+            SetupStep::PickProvider => {
+                let count = SetupState::providers().len();
+                match key.code {
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        self.setup_state.selected_provider =
+                            (self.setup_state.selected_provider + 1).min(count - 1);
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        self.setup_state.selected_provider =
+                            self.setup_state.selected_provider.saturating_sub(1);
+                    }
+                    KeyCode::Enter => {
+                        self.setup_state.step = SetupStep::EnterApiKey;
+                        self.setup_state.key_input.clear();
+                        self.setup_state.key_confirmed = false;
+                    }
+                    KeyCode::Esc => {
+                        self.overlay = Overlay::None;
+                    }
+                    _ => {}
+                }
+            }
+            SetupStep::EnterApiKey => {
+                match (key.modifiers, key.code) {
+                    (_, KeyCode::Enter) => {
+                        if !self.setup_state.key_input.trim().is_empty() {
+                            self.setup_state.key_confirmed = true;
+                            self.setup_state.step = SetupStep::PickModel;
+                            self.setup_state.selected_model = 0;
+                        }
+                    }
+                    (_, KeyCode::Esc) => {
+                        self.setup_state.step = SetupStep::PickProvider;
+                    }
+                    (_, KeyCode::Backspace) => {
+                        self.setup_state.key_input.pop();
+                    }
+                    (crossterm::event::KeyModifiers::CONTROL, KeyCode::Char('v')) => {
+                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                            if let Ok(text) = clipboard.get_text() {
+                                self.setup_state.key_input.push_str(text.trim());
+                            }
+                        }
+                    }
+                    (_, KeyCode::Char(c)) => {
+                        self.setup_state.key_input.push(c);
+                    }
+                    _ => {}
+                }
+            }
+            SetupStep::PickModel => {
+                let provider_id = self.setup_state.current_provider_id();
+                let count = SetupState::models_for_provider(provider_id).len();
+                match key.code {
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        self.setup_state.selected_model =
+                            (self.setup_state.selected_model + 1).min(count.saturating_sub(1));
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        self.setup_state.selected_model =
+                            self.setup_state.selected_model.saturating_sub(1);
+                    }
+                    KeyCode::Enter => {
+                        self.complete_setup();
+                    }
+                    KeyCode::Esc => {
+                        self.setup_state.step = SetupStep::EnterApiKey;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn complete_setup(&mut self) {
+        let provider_id = self.setup_state.current_provider_id().to_string();
+        let key = self.setup_state.key_input.trim().to_string();
+        let models = SetupState::models_for_provider(&provider_id);
+        let model_id = models.get(self.setup_state.selected_model)
+            .map(|(id, _)| id.to_string())
+            .unwrap_or_else(|| models.first().map(|(id, _)| id.to_string()).unwrap_or_default());
+
+        self.config.provider = provider_id.clone();
+        self.config.model = model_id;
+        self.config.set_api_key_for_provider(&provider_id, key);
+        let _ = self.config.save();
+
+        self.overlay = Overlay::None;
+        self.status_message = Some("Setup complete!".into());
     }
 
     /// Send all tool results back to the API and continue the conversation.
@@ -1149,6 +1337,10 @@ impl App {
                 self.redo();
                 return Ok(());
             }
+            "/setup" => {
+                self.setup_state = SetupState::new();
+                self.overlay = Overlay::Setup;
+            }
             "/quit" | "/q" => {
                 self.should_quit = true;
             }
@@ -1596,7 +1788,7 @@ impl App {
             "/clear", "/new", "/model", "/models", "/provider", "/system",
             "/history", "/help", "/temp", "/save", "/nvim", "/tools", "/file",
             "/context", "/paste", "/resume", "/diff", "/export", "/theme",
-            "/retry", "/edit", "/quit", "/run", "/undo", "/redo",
+            "/retry", "/edit", "/quit", "/run", "/undo", "/redo", "/setup",
         ];
         let matches: Vec<&&str> = commands.iter()
             .filter(|c| c.starts_with(&self.input))
