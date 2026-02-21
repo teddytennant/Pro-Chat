@@ -49,6 +49,9 @@ tracing-appender = "0.2"
 # Error handling
 anyhow = "1"
 
+# File globbing
+glob = "0.3"
+
 # Misc
 unicode-width = "0.2"
 textwrap = "0.16"
