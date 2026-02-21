@@ -180,6 +180,42 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> KeyAction {
             KeyAction::Consumed
         }
 
+        // Extract code blocks and enter visual selection mode
+        (KeyModifiers::CONTROL, KeyCode::Char('y')) => {
+            app.extract_code_blocks();
+            if app.code_blocks.is_empty() {
+                app.status_message = Some("No code blocks found".into());
+            } else {
+                app.visual_mode = true;
+                let summary: Vec<String> = app.code_blocks.iter().enumerate().map(|(i, (_, lang, content))| {
+                    let lang_label = if lang.is_empty() { "text" } else { lang.as_str() };
+                    let preview: String = content.lines().next().unwrap_or("").chars().take(30).collect();
+                    format!("[{}] {} {}", i + 1, lang_label, preview)
+                }).collect();
+                app.status_message = Some(format!("Code blocks: {}", summary.join(" | ")));
+            }
+            KeyAction::Consumed
+        }
+
+        // Send last code block to neovim
+        (KeyModifiers::CONTROL, KeyCode::Char('e')) => {
+            app.extract_code_blocks();
+            if app.code_blocks.is_empty() {
+                app.status_message = Some("No code blocks to send".into());
+            } else {
+                let last_idx = app.code_blocks.len() - 1;
+                app.send_code_to_nvim(last_idx);
+            }
+            KeyAction::Consumed
+        }
+
+        // Number keys 1-9 yank code block when in visual mode
+        (KeyModifiers::NONE, KeyCode::Char(c @ '1'..='9')) if app.visual_mode => {
+            let idx = (c as usize) - ('1' as usize);
+            app.yank_code_block(idx);
+            KeyAction::Consumed
+        }
+
         _ => KeyAction::None,
     }
 }
