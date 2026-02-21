@@ -4,6 +4,12 @@ use ratatui::widgets::*;
 use crate::app::{App, InputMode, Overlay};
 use crate::markdown;
 
+const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+fn spinner_frame(tick: u64) -> &'static str {
+    SPINNER_FRAMES[(tick as usize / 2) % SPINNER_FRAMES.len()]
+}
+
 pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();
 
@@ -181,19 +187,20 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
             }
         }
 
-        // Streaming indicator
+        // Streaming indicator with spinner
         if msg.role == "assistant" && app.streaming {
+            let frame = spinner_frame(app.tick_count);
             if msg.content.is_empty() && msg.tool_invocations.is_empty() {
                 all_lines.push(Line::from(Span::styled(
-                    "  ▍",
+                    format!("  {frame} "),
                     Style::default().fg(Color::Rgb(187, 154, 247)),
                 )));
             } else if !msg.content.is_empty() {
-                // Append blinking cursor to the last line of streaming text
+                // Append spinner to the last line of streaming text
                 if let Some(last_line) = all_lines.last_mut() {
                     let mut spans: Vec<Span> = last_line.spans.clone();
                     spans.push(Span::styled(
-                        "▍",
+                        format!(" {frame}"),
                         Style::default().fg(Color::Rgb(187, 154, 247)),
                     ));
                     *last_line = Line::from(spans);
@@ -252,8 +259,9 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
         ));
     }
     if app.streaming {
+        let frame = spinner_frame(app.tick_count);
         right_title_spans.push(Span::styled(
-            " streaming... ",
+            format!(" {frame} streaming... "),
             Style::default().fg(Color::Rgb(187, 154, 247)).add_modifier(Modifier::ITALIC),
         ));
     }
@@ -272,6 +280,8 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
 
     let display_text = if app.input_mode == InputMode::Command {
         format!(":{}", app.command_input)
+    } else if app.input_mode == InputMode::Search {
+        format!("/{}", app.search_query)
     } else if app.input.is_empty() {
         match app.input_mode {
             InputMode::Insert => "Type a message... (Enter to send, Shift+Enter for newline)".to_string(),
@@ -294,9 +304,11 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(input_paragraph, area);
 
     // Cursor position
-    if app.input_mode == InputMode::Insert || app.input_mode == InputMode::Command {
+    if app.input_mode == InputMode::Insert || app.input_mode == InputMode::Command || app.input_mode == InputMode::Search {
         let cursor_x = if app.input_mode == InputMode::Command {
             area.x + 2 + app.command_input.len() as u16
+        } else if app.input_mode == InputMode::Search {
+            area.x + 2 + app.search_query.len() as u16
         } else {
             let current_line_start = app.input[..app.cursor_pos]
                 .rfind('\n')
@@ -304,7 +316,7 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
                 .unwrap_or(0);
             area.x + 1 + (app.cursor_pos - current_line_start) as u16
         };
-        let cursor_line = if app.input_mode == InputMode::Command {
+        let cursor_line = if app.input_mode == InputMode::Command || app.input_mode == InputMode::Search {
             0
         } else {
             app.input[..app.cursor_pos].matches('\n').count()
@@ -413,6 +425,8 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
         Line::from(Span::raw("  y            Copy last response")),
         Line::from(Span::raw("  p            Paste from clipboard")),
         Line::from(Span::raw("  ?            This help")),
+        Line::from(Span::raw("  /            Search messages")),
+        Line::from(Span::raw("  n/N          Next/prev match")),
         Line::from(Span::raw("  Ctrl+h       History")),
         Line::from(Span::raw("  Ctrl+n       New conversation")),
         Line::from(""),
