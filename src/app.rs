@@ -66,6 +66,14 @@ pub struct App {
     pub api_messages: Vec<Message>,
     /// Whether tools are enabled for this session
     pub tools_enabled: bool,
+    /// Whether we're in visual selection mode (for code block picking)
+    pub visual_mode: bool,
+    /// Start message index for visual selection
+    pub visual_start: usize,
+    /// End message index for visual selection (multi-message select)
+    pub visual_end: usize,
+    /// Extracted code blocks: (message_index, language, content)
+    pub code_blocks: Vec<(usize, String, String)>,
     /// Search query string (for / search mode)
     pub search_query: String,
     /// Indices of messages matching the search
@@ -102,7 +110,9 @@ impl App {
         tool_executor.set_permission("list_files", ToolPermission::AutoAllow);
         tool_executor.set_permission("search_files", ToolPermission::AutoAllow);
 
-        Self {
+        let last_conversation_id = config.last_conversation_id.clone();
+
+        let mut app = Self {
             config,
             input: String::new(),
             input_mode: InputMode::Insert,
@@ -128,13 +138,33 @@ impl App {
             tool_invocations: Vec::new(),
             api_messages: Vec::new(),
             tools_enabled: true,
+            visual_mode: false,
+            visual_start: 0,
+            visual_end: 0,
+            code_blocks: Vec::new(),
             search_query: String::new(),
             search_matches: Vec::new(),
             search_match_idx: 0,
             tick_count: 0,
             api_client: ApiClient::new(),
             event_tx: None,
+        };
+
+        // Auto-restore last conversation if configured
+        if let Some(ref id) = last_conversation_id {
+            if app.load_conversation(id).is_ok() {
+                app.status_message = Some("Restored previous session".into());
+            }
         }
+
+        app
+    }
+
+    /// Estimate the number of tokens in the conversation.
+    /// Uses a simple heuristic: total characters / 4 (rough average for English text with code).
+    pub fn estimate_tokens(&self) -> usize {
+        let total_chars: usize = self.messages.iter().map(|m| m.content.len()).sum();
+        total_chars / 4
     }
 
     pub fn set_model(&mut self, model: &str) {
@@ -164,6 +194,13 @@ impl App {
         self.conversation = conv;
         self.scroll_to_bottom();
         Ok(())
+    }
+
+    /// Save the current conversation and update the config to track it as the last session.
+    fn save_and_track_conversation(&mut self) {
+        let _ = self.conversation.save();
+        self.config.last_conversation_id = Some(self.conversation.id.clone());
+        let _ = self.config.save();
     }
 
     pub fn is_streaming(&self) -> bool {
@@ -964,6 +1001,90 @@ impl App {
                 let _ = clipboard.set_text(&last.content);
                 self.status_message = Some("Response copied to clipboard".into());
             }
+        }
+    }
+
+    /// Scan all assistant messages for fenced code blocks (```...```)
+    /// and store them in self.code_blocks as (msg_idx, language, content).
+    pub fn extract_code_blocks(&mut self) {
+        self.code_blocks.clear();
+        for (msg_idx, msg) in self.messages.iter().enumerate() {
+            if msg.role != "assistant" {
+                continue;
+            }
+            let content = &msg.content;
+            let mut search_from = 0;
+            while let Some(fence_start) = content[search_from..].find("```") {
+                let abs_fence_start = search_from + fence_start;
+                let after_backticks = abs_fence_start + 3;
+                // Extract language from the opening fence line
+                let line_end = content[after_backticks..]
+                    .find('\n')
+                    .map(|i| after_backticks + i)
+                    .unwrap_or(content.len());
+                let lang = content[after_backticks..line_end].trim().to_string();
+                let code_start = if line_end < content.len() { line_end + 1 } else { line_end };
+                // Find closing fence
+                if let Some(close_pos) = content[code_start..].find("```") {
+                    let abs_close = code_start + close_pos;
+                    let code_content = content[code_start..abs_close].to_string();
+                    // Strip trailing newline from code content
+                    let code_content = code_content.trim_end_matches('\n').to_string();
+                    self.code_blocks.push((msg_idx, lang, code_content));
+                    // Skip past the closing fence
+                    search_from = abs_close + 3;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Copy the code block at the given index to the system clipboard.
+    pub fn yank_code_block(&mut self, idx: usize) {
+        if let Some((_msg_idx, lang, content)) = self.code_blocks.get(idx) {
+            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                let _ = clipboard.set_text(content);
+                let preview: String = content.chars().take(40).collect();
+                let lang_label = if lang.is_empty() { "text" } else { lang.as_str() };
+                self.status_message = Some(format!(
+                    "Yanked block #{} [{}]: {}{}",
+                    idx + 1,
+                    lang_label,
+                    preview,
+                    if content.len() > 40 { "..." } else { "" }
+                ));
+            } else {
+                self.status_message = Some("Failed to access clipboard".into());
+            }
+        } else {
+            self.status_message = Some(format!("No code block #{}", idx + 1));
+        }
+        self.visual_mode = false;
+    }
+
+    /// Send the code block at the given index to neovim if connected.
+    pub fn send_code_to_nvim(&mut self, idx: usize) {
+        if let Some((_msg_idx, lang, content)) = self.code_blocks.get(idx).cloned() {
+            if let Some(ref nvim) = self.neovim {
+                let ft = if lang.is_empty() { "text" } else { &lang };
+                match nvim.send_to_buffer(&content, ft) {
+                    Ok(()) => {
+                        self.status_message = Some(format!(
+                            "Sent block #{} [{}] to neovim",
+                            idx + 1,
+                            ft
+                        ));
+                    }
+                    Err(e) => {
+                        self.status_message = Some(format!("Neovim error: {e}"));
+                    }
+                }
+            } else {
+                self.status_message = Some("No neovim connection".into());
+            }
+        } else {
+            self.status_message = Some(format!("No code block #{}", idx + 1));
         }
     }
 
