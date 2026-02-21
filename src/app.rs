@@ -572,26 +572,61 @@ impl App {
             None => return,
         };
 
+        self.spawn_api_call(api_key);
+    }
+
+    /// Spawn an API call on a background task based on the current provider.
+    fn spawn_api_call(&self, api_key: String) {
         let tx = self.event_tx.clone().unwrap();
+        let provider = self.config.provider.clone();
         let model = self.config.model.clone();
         let system = self.config.system_prompt.clone();
         let max_tokens = self.config.max_tokens;
         let temp = self.config.temperature;
         let messages = self.api_messages.clone();
-        let tools_enabled = self.tools_enabled;
+        let tools_enabled = self.tools_enabled && provider == "anthropic";
         let client = ApiClient::new();
 
         tokio::spawn(async move {
-            let result = if tools_enabled {
-                client.call_anthropic_with_tools(
-                    &api_key, &model, &messages,
-                    system.as_deref(), max_tokens, temp, tx.clone(),
-                ).await
-            } else {
-                client.stream_anthropic(
-                    &api_key, &model, &messages,
-                    system.as_deref(), max_tokens, temp, tx.clone(),
-                ).await
+            let result = match provider.as_str() {
+                "openai" => {
+                    client.stream_openai_compatible(
+                        &api_key, &model, &messages,
+                        system.as_deref(), max_tokens, temp, tx.clone(),
+                        "https://api.openai.com/v1/chat/completions",
+                        &[],
+                    ).await
+                }
+                "openrouter" => {
+                    client.stream_openai_compatible(
+                        &api_key, &model, &messages,
+                        system.as_deref(), max_tokens, temp, tx.clone(),
+                        "https://openrouter.ai/api/v1/chat/completions",
+                        &[("HTTP-Referer", "https://github.com/pro-chat"), ("X-Title", "Pro Chat")],
+                    ).await
+                }
+                "xai" => {
+                    client.stream_openai_compatible(
+                        &api_key, &model, &messages,
+                        system.as_deref(), max_tokens, temp, tx.clone(),
+                        "https://api.x.ai/v1/chat/completions",
+                        &[],
+                    ).await
+                }
+                _ => {
+                    // Default: anthropic
+                    if tools_enabled {
+                        client.call_anthropic_with_tools(
+                            &api_key, &model, &messages,
+                            system.as_deref(), max_tokens, temp, tx.clone(),
+                        ).await
+                    } else {
+                        client.stream_anthropic(
+                            &api_key, &model, &messages,
+                            system.as_deref(), max_tokens, temp, tx.clone(),
+                        ).await
+                    }
+                }
             };
 
             if let Err(e) = result {
@@ -615,10 +650,7 @@ impl App {
             None => {
                 self.status_message = Some(format!(
                     "No API key set. Set {} or add to config: {}",
-                    match self.config.provider.as_str() {
-                        "openai" => "OPENAI_API_KEY",
-                        _ => "ANTHROPIC_API_KEY",
-                    },
+                    self.config.api_key_env_var(),
                     Config::path().display()
                 ));
                 return Ok(());
@@ -658,43 +690,7 @@ impl App {
         self.stream_buffer.clear();
         self.scroll_to_bottom();
 
-        let tx = self.event_tx.clone().unwrap();
-        let provider = self.config.provider.clone();
-        let model = self.config.model.clone();
-        let system = self.config.system_prompt.clone();
-        let max_tokens = self.config.max_tokens;
-        let temp = self.config.temperature;
-        let messages = self.api_messages.clone();
-        let tools_enabled = self.tools_enabled && provider == "anthropic";
-        let client = ApiClient::new();
-
-        tokio::spawn(async move {
-            let result = match provider.as_str() {
-                "openai" => {
-                    client.stream_openai(
-                        &api_key, &model, &messages,
-                        system.as_deref(), max_tokens, temp, tx.clone(),
-                    ).await
-                }
-                _ => {
-                    if tools_enabled {
-                        client.call_anthropic_with_tools(
-                            &api_key, &model, &messages,
-                            system.as_deref(), max_tokens, temp, tx.clone(),
-                        ).await
-                    } else {
-                        client.stream_anthropic(
-                            &api_key, &model, &messages,
-                            system.as_deref(), max_tokens, temp, tx.clone(),
-                        ).await
-                    }
-                }
-            };
-
-            if let Err(e) = result {
-                let _ = tx.send(Event::ApiError(e.to_string()));
-            }
-        });
+        self.spawn_api_call(api_key);
 
         Ok(())
     }
@@ -758,43 +754,7 @@ impl App {
         self.stream_buffer.clear();
         self.scroll_to_bottom();
 
-        let tx = self.event_tx.clone().unwrap();
-        let provider = self.config.provider.clone();
-        let model = self.config.model.clone();
-        let system = self.config.system_prompt.clone();
-        let max_tokens = self.config.max_tokens;
-        let temp = self.config.temperature;
-        let messages = self.api_messages.clone();
-        let tools_enabled = self.tools_enabled && provider == "anthropic";
-        let client = ApiClient::new();
-
-        tokio::spawn(async move {
-            let result = match provider.as_str() {
-                "openai" => {
-                    client.stream_openai(
-                        &api_key, &model, &messages,
-                        system.as_deref(), max_tokens, temp, tx.clone(),
-                    ).await
-                }
-                _ => {
-                    if tools_enabled {
-                        client.call_anthropic_with_tools(
-                            &api_key, &model, &messages,
-                            system.as_deref(), max_tokens, temp, tx.clone(),
-                        ).await
-                    } else {
-                        client.stream_anthropic(
-                            &api_key, &model, &messages,
-                            system.as_deref(), max_tokens, temp, tx.clone(),
-                        ).await
-                    }
-                }
-            };
-
-            if let Err(e) = result {
-                let _ = tx.send(Event::ApiError(e.to_string()));
-            }
-        });
+        self.spawn_api_call(api_key);
 
         Ok(())
     }
@@ -883,8 +843,7 @@ impl App {
             }
             "/models" => {
                 self.status_message = Some(
-                    "Model aliases: sonnet/s -> claude-sonnet-4-20250514, opus/o -> claude-opus-4-20250514, \
-                     haiku/h -> claude-haiku-4-5-20251001, gpt4 -> gpt-4o, gpt4m -> gpt-4o-mini"
+                    "Aliases: sonnet/s, opus/o, haiku/h, gpt4, gpt4m, grok/grok3, grok3m, grok2, deepseek, llama, mistral, gemini"
                         .into(),
                 );
             }
@@ -1857,11 +1816,22 @@ impl App {
     /// If the alias is not recognized, the input is returned unchanged.
     fn resolve_model_alias(alias: &str) -> String {
         match alias.trim() {
+            // Anthropic
             "sonnet" | "s" => "claude-sonnet-4-20250514".into(),
             "opus" | "o" => "claude-opus-4-20250514".into(),
             "haiku" | "h" => "claude-haiku-4-5-20251001".into(),
+            // OpenAI
             "gpt4" => "gpt-4o".into(),
             "gpt4m" => "gpt-4o-mini".into(),
+            // xAI
+            "grok" | "grok3" => "grok-3".into(),
+            "grok3m" => "grok-3-mini".into(),
+            "grok2" => "grok-2".into(),
+            // OpenRouter popular models
+            "deepseek" => "deepseek/deepseek-chat-v3-0324".into(),
+            "llama" | "llama4" => "meta-llama/llama-4-maverick".into(),
+            "mistral" => "mistralai/mistral-large-latest".into(),
+            "gemini" => "google/gemini-2.5-pro-preview".into(),
             other => other.to_string(),
         }
     }
