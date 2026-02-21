@@ -26,6 +26,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         Overlay::Help => draw_help_overlay(f, area),
         Overlay::History => draw_history_overlay(f, app, area),
         Overlay::Settings => draw_settings_overlay(f, app, area),
+        Overlay::ToolConfirm => draw_tool_confirm_overlay(f, app, area),
         Overlay::None => {}
     }
 }
@@ -116,14 +117,74 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
             }
         }
 
+        // Tool invocations
+        for inv in &msg.tool_invocations {
+            all_lines.push(Line::from(""));
+            let status_icon = match &inv.result {
+                Some(r) if r.success => "✓",
+                Some(_) => "✗",
+                None => "…",
+            };
+            let status_color = match &inv.result {
+                Some(r) if r.success => Color::Rgb(158, 206, 106),
+                Some(_) => Color::Rgb(247, 118, 142),
+                None => Color::Rgb(224, 175, 104),
+            };
+            all_lines.push(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(
+                    format!("{status_icon} "),
+                    Style::default().fg(status_color),
+                ),
+                Span::styled(
+                    inv.tool_name.clone(),
+                    Style::default().fg(Color::Rgb(224, 175, 104)).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("  {}", inv.tool_args),
+                    Style::default().fg(Color::Rgb(86, 95, 137)),
+                ),
+            ]));
+
+            if let Some(ref result) = inv.result {
+                if !inv.collapsed {
+                    // Show result (truncated if long)
+                    let output_lines: Vec<&str> = result.output.lines().collect();
+                    let max_lines = 15;
+                    let show_lines = if output_lines.len() > max_lines {
+                        &output_lines[..max_lines]
+                    } else {
+                        &output_lines
+                    };
+                    for ol in show_lines {
+                        all_lines.push(Line::from(Span::styled(
+                            format!("    {ol}"),
+                            Style::default().fg(Color::Rgb(86, 95, 137)),
+                        )));
+                    }
+                    if output_lines.len() > max_lines {
+                        all_lines.push(Line::from(Span::styled(
+                            format!("    ... ({} more lines)", output_lines.len() - max_lines),
+                            Style::default().fg(Color::Rgb(59, 66, 97)),
+                        )));
+                    }
+                } else {
+                    all_lines.push(Line::from(Span::styled(
+                        format!("    ({} lines collapsed)", result.output.lines().count()),
+                        Style::default().fg(Color::Rgb(59, 66, 97)),
+                    )));
+                }
+            }
+        }
+
         // Streaming indicator
         if msg.role == "assistant" && app.streaming {
-            if msg.content.is_empty() {
+            if msg.content.is_empty() && msg.tool_invocations.is_empty() {
                 all_lines.push(Line::from(Span::styled(
                     "  ▍",
                     Style::default().fg(Color::Rgb(187, 154, 247)),
                 )));
-            } else {
+            } else if !msg.content.is_empty() {
                 // Append blinking cursor to the last line of streaming text
                 if let Some(last_line) = all_lines.last_mut() {
                     let mut spans: Vec<Span> = last_line.spans.clone();
@@ -259,6 +320,15 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
             Style::default().fg(Color::Rgb(86, 95, 137)),
         ),
     ];
+
+    // Tools status
+    if app.tools_enabled {
+        spans.push(Span::styled("│", Style::default().fg(Color::Rgb(59, 66, 97))));
+        spans.push(Span::styled(
+            " tools ",
+            Style::default().fg(Color::Rgb(158, 206, 106)),
+        ));
+    }
 
     // Neovim status
     if let Some(ref nvim) = app.neovim {
@@ -438,6 +508,74 @@ fn draw_settings_overlay(f: &mut Frame, app: &App, area: Rect) {
                 .border_style(Style::default().fg(Color::Rgb(59, 66, 97)))
                 .style(Style::default().bg(Color::Rgb(22, 22, 30))),
         );
+
+    f.render_widget(p, overlay_area);
+}
+
+fn draw_tool_confirm_overlay(f: &mut Frame, app: &App, area: Rect) {
+    let overlay_area = centered_rect(60, 40, area);
+    f.render_widget(Clear, overlay_area);
+
+    let call = match app.pending_tool_calls.get(app.pending_tool_confirm_idx) {
+        Some(c) => c,
+        None => return,
+    };
+
+    let tool_name = call.tool.name();
+    let tool_args = crate::app::format_tool_args_public(&call.tool);
+
+    let lines = vec![
+        Line::from(Span::styled(
+            "Tool Execution Request",
+            Style::default().fg(Color::Rgb(224, 175, 104)).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Tool: ", Style::default().fg(Color::Rgb(86, 95, 137))),
+            Span::styled(
+                tool_name.to_string(),
+                Style::default().fg(Color::Rgb(122, 162, 247)).add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  Args: ", Style::default().fg(Color::Rgb(86, 95, 137))),
+            Span::styled(tool_args, Style::default().fg(Color::Rgb(192, 202, 245))),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!(
+                "  ({}/{})",
+                app.pending_tool_confirm_idx + 1,
+                app.pending_tool_calls.len()
+            ),
+            Style::default().fg(Color::Rgb(86, 95, 137)),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  [y] ", Style::default().fg(Color::Rgb(158, 206, 106)).add_modifier(Modifier::BOLD)),
+            Span::styled("Allow  ", Style::default().fg(Color::Rgb(192, 202, 245))),
+            Span::styled("[a] ", Style::default().fg(Color::Rgb(122, 162, 247)).add_modifier(Modifier::BOLD)),
+            Span::styled("Always  ", Style::default().fg(Color::Rgb(192, 202, 245))),
+            Span::styled("[n] ", Style::default().fg(Color::Rgb(247, 118, 142)).add_modifier(Modifier::BOLD)),
+            Span::styled("Deny  ", Style::default().fg(Color::Rgb(192, 202, 245))),
+            Span::styled("[d] ", Style::default().fg(Color::Rgb(247, 118, 142)).add_modifier(Modifier::BOLD)),
+            Span::styled("Deny all", Style::default().fg(Color::Rgb(192, 202, 245))),
+        ]),
+    ];
+
+    let p = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::Rgb(224, 175, 104)))
+                .title(Line::from(Span::styled(
+                    " Confirm ",
+                    Style::default().fg(Color::Rgb(224, 175, 104)).add_modifier(Modifier::BOLD),
+                )))
+                .style(Style::default().bg(Color::Rgb(22, 22, 30))),
+        )
+        .wrap(Wrap { trim: false });
 
     f.render_widget(p, overlay_area);
 }
