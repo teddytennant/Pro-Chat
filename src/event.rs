@@ -11,6 +11,8 @@ pub enum Event {
     ApiChunk(String),
     ApiDone,
     ApiError(String),
+    /// The API returned tool_use blocks. Contains the full response JSON.
+    ToolUseRequest(String),
 }
 
 pub struct EventHandler {
