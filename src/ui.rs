@@ -56,7 +56,9 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
     if app.messages.is_empty() {
         // Welcome screen
         let banner_style = Style::default().fg(c.accent).add_modifier(Modifier::BOLD);
+        let dim_accent = Style::default().fg(c.border);
         let welcome = vec![
+            Line::from(""),
             Line::from(""),
             Line::from(""),
             Line::from(Span::styled("██████╗ ██████╗  ██████╗ ",  banner_style)),
@@ -68,17 +70,41 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
             Line::from(""),
             Line::from(Span::styled(
                 "Fast AI chat in your terminal",
-                Style::default().fg(c.dim),
+                Style::default().fg(c.fg),
             )),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  ", dim_accent),
+                Span::styled(
+                    format!("{}", app.config.provider),
+                    Style::default().fg(c.accent).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" / ", Style::default().fg(c.dim)),
+                Span::styled(
+                    format!("{}", app.config.model),
+                    Style::default().fg(c.dim),
+                ),
+            ]),
             Line::from(Span::styled(
-                format!("{}", std::env::current_dir().unwrap_or_default().display()),
+                format!("  {}", std::env::current_dir().unwrap_or_default().display()),
                 Style::default().fg(c.dim).add_modifier(Modifier::DIM),
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "Type a message to start • ? for help • :q to quit",
+                "─────────────────────────────────",
                 Style::default().fg(c.border),
             )),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  i", Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
+                Span::styled(" insert  ", Style::default().fg(c.dim)),
+                Span::styled("?", Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
+                Span::styled(" help  ", Style::default().fg(c.dim)),
+                Span::styled(":q", Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
+                Span::styled(" quit  ", Style::default().fg(c.dim)),
+                Span::styled("/model", Style::default().fg(c.accent).add_modifier(Modifier::BOLD)),
+                Span::styled(" switch", Style::default().fg(c.dim)),
+            ]),
         ];
         let p = Paragraph::new(welcome).alignment(Alignment::Center);
         f.render_widget(p, inner);
@@ -89,32 +115,48 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
     let mut all_lines: Vec<Line> = Vec::new();
     let width = inner.width as usize;
 
-    for msg in &app.messages {
-        // Role header
-        let (label, color) = match msg.role.as_str() {
-            "user" => ("You", c.user_label),
-            "assistant" => ("Assistant", c.assistant_label),
-            _ => ("System", c.dim),
+    for (msg_idx, msg) in app.messages.iter().enumerate() {
+        // Separator between messages
+        if msg_idx > 0 {
+            let sep_width = width.saturating_sub(4);
+            let separator = "─".repeat(sep_width);
+            all_lines.push(Line::from(""));
+            all_lines.push(Line::from(Span::styled(
+                format!("  {separator}"),
+                Style::default().fg(c.border),
+            )));
+        }
+
+        // Role header with icon
+        let (icon, label, color) = match msg.role.as_str() {
+            "user" => ("●", "You", c.user_label),
+            "assistant" => ("◆", "Assistant", c.assistant_label),
+            _ => ("○", "System", c.dim),
         };
 
         let local_time = msg.timestamp.with_timezone(&Local);
-        let time_str = format!("  {:02}:{:02}", local_time.hour(), local_time.minute());
+        let time_str = format!("{:02}:{:02}", local_time.hour(), local_time.minute());
         all_lines.push(Line::from(""));
         all_lines.push(Line::from(vec![
             Span::styled(
-                format!("  {label}"),
+                format!("  {icon} "),
+                Style::default().fg(color),
+            ),
+            Span::styled(
+                label.to_string(),
                 Style::default().fg(color).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                time_str,
-                Style::default().fg(c.dim),
+                format!("  {time_str}"),
+                Style::default().fg(c.dim).add_modifier(Modifier::DIM),
             ),
         ]));
+        all_lines.push(Line::from(""));
 
         // Message content
         if msg.role == "assistant" {
             let parsed = markdown::parse_markdown(&msg.content);
-            let max_width = width.saturating_sub(4);
+            let max_width = width.saturating_sub(6);
             for line in parsed {
                 // Word-wrap long lines that are a single plain-text span
                 let visible_width: usize = line.spans.iter().map(|s| s.content.len()).sum();
@@ -126,7 +168,7 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
                         if current.is_empty() {
                             current = word.to_string();
                         } else if current.len() + 1 + word.len() > max_width {
-                            all_lines.push(Line::from(Span::styled(current.clone(), style)));
+                            all_lines.push(Line::from(Span::styled(format!("    {current}"), style)));
                             current = word.to_string();
                         } else {
                             current.push(' ');
@@ -134,24 +176,27 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
                         }
                     }
                     if !current.is_empty() {
-                        all_lines.push(Line::from(Span::styled(current, style)));
+                        all_lines.push(Line::from(Span::styled(format!("    {current}"), style)));
                     }
                 } else {
-                    all_lines.push(line);
+                    // Add indent to parsed markdown lines
+                    let mut spans: Vec<Span> = vec![Span::raw("    ")];
+                    spans.extend(line.spans);
+                    all_lines.push(Line::from(spans));
                 }
             }
         } else {
             // User messages - plain text with wrapping
             for line in msg.content.lines() {
-                if line.len() > width.saturating_sub(4) {
+                if line.len() > width.saturating_sub(6) {
                     // Simple word wrap
-                    let mut current = String::from("  ");
+                    let mut current = String::from("    ");
                     for word in line.split_whitespace() {
                         if current.len() + word.len() + 1 > width.saturating_sub(2) {
                             all_lines.push(Line::from(current.clone()));
-                            current = format!("  {word}");
+                            current = format!("    {word}");
                         } else {
-                            if current.len() > 2 {
+                            if current.len() > 4 {
                                 current.push(' ');
                             }
                             current.push_str(word);
@@ -161,7 +206,7 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
                         all_lines.push(Line::from(current));
                     }
                 } else {
-                    all_lines.push(Line::from(format!("  {line}")));
+                    all_lines.push(Line::from(format!("    {line}")));
                 }
             }
         }
@@ -172,7 +217,7 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
             let status_icon = match &inv.result {
                 Some(r) if r.success => "✓",
                 Some(_) => "✗",
-                None => "…",
+                None => "⋯",
             };
             let status_color = match &inv.result {
                 Some(r) if r.success => c.success,
@@ -180,14 +225,14 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
                 None => c.warning,
             };
             all_lines.push(Line::from(vec![
-                Span::styled("  ", Style::default()),
+                Span::styled("    ", Style::default()),
                 Span::styled(
                     format!("{status_icon} "),
-                    Style::default().fg(status_color),
+                    Style::default().fg(status_color).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     inv.tool_name.clone(),
-                    Style::default().fg(c.warning).add_modifier(Modifier::BOLD),
+                    Style::default().fg(c.accent).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     format!("  {}", inv.tool_args),
@@ -197,7 +242,6 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
 
             if let Some(ref result) = inv.result {
                 if !inv.collapsed {
-                    // Show result (truncated if long)
                     let output_lines: Vec<&str> = result.output.lines().collect();
                     let max_lines = 15;
                     let show_lines = if output_lines.len() > max_lines {
@@ -207,19 +251,19 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
                     };
                     for ol in show_lines {
                         all_lines.push(Line::from(Span::styled(
-                            format!("    {ol}"),
-                            Style::default().fg(c.dim),
+                            format!("      {ol}"),
+                            Style::default().fg(c.dim).add_modifier(Modifier::DIM),
                         )));
                     }
                     if output_lines.len() > max_lines {
                         all_lines.push(Line::from(Span::styled(
-                            format!("    ... ({} more lines)", output_lines.len() - max_lines),
+                            format!("      ⋯ {} more lines", output_lines.len() - max_lines),
                             Style::default().fg(c.border),
                         )));
                     }
                 } else {
                     all_lines.push(Line::from(Span::styled(
-                        format!("    ({} lines collapsed)", result.output.lines().count()),
+                        format!("      ▸ {} lines collapsed", result.output.lines().count()),
                         Style::default().fg(c.border),
                     )));
                 }
@@ -230,10 +274,13 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
         if msg.role == "assistant" && app.streaming {
             let frame = spinner_frame(app.tick_count);
             if msg.content.is_empty() && msg.tool_invocations.is_empty() {
-                all_lines.push(Line::from(Span::styled(
-                    format!("  {frame} "),
-                    Style::default().fg(c.assistant_label),
-                )));
+                all_lines.push(Line::from(vec![
+                    Span::styled("    ", Style::default()),
+                    Span::styled(
+                        format!("{frame} Thinking..."),
+                        Style::default().fg(c.assistant_label),
+                    ),
+                ]));
             } else if !msg.content.is_empty() {
                 // Append spinner to the last line of streaming text
                 if let Some(last_line) = all_lines.last_mut() {
@@ -280,7 +327,7 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     let c = app.colors();
-    let dark_bg = Color::Rgb(26, 27, 38);
+    let dark_bg = c.bg_dark;
 
     let mode_indicator = match app.input_mode {
         InputMode::Normal => Span::styled(" NOR ", Style::default().bg(c.accent).fg(dark_bg).add_modifier(Modifier::BOLD)),
@@ -382,57 +429,75 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
+fn provider_icon(provider: &str) -> &'static str {
+    match provider {
+        "anthropic" => "▲",
+        "openai" => "◎",
+        "openrouter" => "⬡",
+        "xai" => "✕",
+        _ => "●",
+    }
+}
+
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let c = app.colors();
 
+    let icon = provider_icon(&app.config.provider);
     let mut spans = vec![
         Span::styled(
-            format!(" {} ", app.config.provider),
-            Style::default().fg(c.dim),
+            format!(" {icon} "),
+            Style::default().fg(c.accent).add_modifier(Modifier::BOLD),
         ),
-        Span::styled("│", Style::default().fg(c.border)),
         Span::styled(
-            format!(" {} ", app.config.model),
-            Style::default().fg(c.dim),
+            format!("{}", app.config.provider),
+            Style::default().fg(c.accent),
+        ),
+        Span::styled(" │ ", Style::default().fg(c.border)),
+        Span::styled(
+            format!("{}", app.config.model),
+            Style::default().fg(c.fg),
         ),
     ];
 
     // Tools status
     if app.tools_enabled {
-        spans.push(Span::styled("│", Style::default().fg(c.border)));
+        spans.push(Span::styled(" │ ", Style::default().fg(c.border)));
         spans.push(Span::styled(
-            " tools ",
+            "⚙ tools",
             Style::default().fg(c.success),
         ));
     }
 
     // Neovim status
     if let Some(ref nvim) = app.neovim {
-        spans.push(Span::styled("│", Style::default().fg(c.border)));
-        spans.push(Span::styled(
-            if nvim.is_connected() { "  nvim " } else { "  nvim ✗ " },
-            Style::default().fg(if nvim.is_connected() {
-                c.success
-            } else {
-                Color::Rgb(247, 118, 142)
-            }),
-        ));
+        spans.push(Span::styled(" │ ", Style::default().fg(c.border)));
+        if nvim.is_connected() {
+            spans.push(Span::styled(
+                " nvim",
+                Style::default().fg(c.success),
+            ));
+        } else {
+            spans.push(Span::styled(
+                " nvim ✗",
+                Style::default().fg(Color::Rgb(247, 118, 142)),
+            ));
+        }
     }
 
     // Scroll lock indicator
     if !app.auto_scroll {
-        spans.push(Span::styled("│", Style::default().fg(c.border)));
+        spans.push(Span::styled(" │ ", Style::default().fg(c.border)));
         spans.push(Span::styled(
-            " SCROLL LOCKED ",
+            "↕ SCROLL LOCKED",
             Style::default().fg(Color::Rgb(247, 118, 142)).add_modifier(Modifier::BOLD),
         ));
     }
 
-    // Status message or default hints
+    // Status message
     if let Some(ref msg) = app.status_message {
-        spans.push(Span::styled("│", Style::default().fg(c.border)));
+        spans.push(Span::styled(" │ ", Style::default().fg(c.border)));
         spans.push(Span::styled(
-            format!(" {msg} "),
+            format!("{msg}"),
             Style::default().fg(c.warning),
         ));
     }
@@ -447,20 +512,17 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
     let timing_display = if app.streaming {
         if let Some(start) = app.stream_start_time {
             let elapsed = start.elapsed().as_secs_f64();
-            format!(" | streaming {elapsed:.1}s...")
+            format!(" {elapsed:.1}s")
         } else {
             String::new()
         }
     } else if let Some(duration) = app.last_response_time {
-        format!(" | {:.1}s", duration.as_secs_f64())
+        format!(" {:.1}s", duration.as_secs_f64())
     } else {
         String::new()
     };
-    let word_count: usize = app.messages.iter()
-        .map(|m| m.content.split_whitespace().count())
-        .sum();
     let msg_count = app.messages.len();
-    let right_text = format!(" {token_display} tokens{timing_display} | {word_count}w | {msg_count}msgs ");
+    let right_text = format!(" {token_display} tok{timing_display} │ {msg_count} msgs ");
 
     let left = Line::from(spans);
     let right = Span::styled(right_text, Style::default().fg(c.dim));
@@ -528,8 +590,8 @@ fn draw_help_overlay(f: &mut Frame, app: &App, area: Rect) {
         Line::from(Span::styled("Commands", Style::default().fg(c.warning).add_modifier(Modifier::BOLD))),
         Line::from(Span::raw("  /clear       Clear conversation")),
         Line::from(Span::raw("  /new         New conversation")),
-        Line::from(Span::raw("  /model <m>   Set model")),
-        Line::from(Span::raw("  /provider    Set provider")),
+        Line::from(Span::raw("  /model <m>   Set model (use /models for aliases)")),
+        Line::from(Span::raw("  /provider    Set provider (anthropic/openai/openrouter/xai)")),
         Line::from(Span::raw("  /system      Set system prompt")),
         Line::from(Span::raw("  /temp <t>    Set temperature")),
         Line::from(Span::raw("  /history     Browse history")),
@@ -542,6 +604,12 @@ fn draw_help_overlay(f: &mut Frame, app: &App, area: Rect) {
         Line::from(Span::raw("  /edit        Edit last user message")),
         Line::from(Span::raw("  /save        Save config")),
         Line::from(Span::raw("  /quit        Quit")),
+        Line::from(""),
+        Line::from(Span::styled("Providers", Style::default().fg(c.accent).add_modifier(Modifier::BOLD))),
+        Line::from(Span::raw("  anthropic    Claude (sonnet/opus/haiku)")),
+        Line::from(Span::raw("  openai       GPT (gpt4/gpt4m)")),
+        Line::from(Span::raw("  openrouter   Any model (deepseek/llama/gemini/mistral)")),
+        Line::from(Span::raw("  xai          Grok (grok/grok3/grok3m/grok2)")),
         Line::from(""),
         Line::from(Span::styled("  Press Esc or q to close", Style::default().fg(c.dim))),
     ];
