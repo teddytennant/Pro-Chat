@@ -40,21 +40,16 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
 
     if app.messages.is_empty() {
         // Welcome screen
+        let banner_style = Style::default().fg(Color::Rgb(122, 162, 247)).add_modifier(Modifier::BOLD);
         let welcome = vec![
             Line::from(""),
             Line::from(""),
-            Line::from(Span::styled(
-                "  ╱╲",
-                Style::default().fg(Color::Rgb(122, 162, 247)),
-            )),
-            Line::from(Span::styled(
-                " ╱  ╲   Pro Chat",
-                Style::default().fg(Color::Rgb(122, 162, 247)).add_modifier(Modifier::BOLD),
-            )),
-            Line::from(Span::styled(
-                "╱____╲",
-                Style::default().fg(Color::Rgb(122, 162, 247)),
-            )),
+            Line::from(Span::styled("██████╗ ██████╗  ██████╗ ",  banner_style)),
+            Line::from(Span::styled("██╔══██╗██╔══██╗██╔═══██╗", banner_style)),
+            Line::from(Span::styled("██████╔╝██████╔╝██║   ██║", banner_style)),
+            Line::from(Span::styled("██╔═══╝ ██╔══██╗██║   ██║", banner_style)),
+            Line::from(Span::styled("██║     ██║  ██║╚██████╔╝", banner_style)),
+            Line::from(Span::styled("╚═╝     ╚═╝  ╚═╝ ╚═════╝", banner_style)),
             Line::from(""),
             Line::from(Span::styled(
                 "Fast AI chat in your terminal",
@@ -62,11 +57,7 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
             )),
             Line::from(""),
             Line::from(Span::styled(
-                "Type a message to start chatting",
-                Style::default().fg(Color::Rgb(86, 95, 137)),
-            )),
-            Line::from(Span::styled(
-                "Press ? for help  •  :q to quit",
+                "Type a message to start • ? for help • :q to quit",
                 Style::default().fg(Color::Rgb(59, 66, 97)),
             )),
         ];
@@ -126,11 +117,23 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
         }
 
         // Streaming indicator
-        if msg.role == "assistant" && msg.content.is_empty() && app.streaming {
-            all_lines.push(Line::from(Span::styled(
-                "  ▍",
-                Style::default().fg(Color::Rgb(187, 154, 247)),
-            )));
+        if msg.role == "assistant" && app.streaming {
+            if msg.content.is_empty() {
+                all_lines.push(Line::from(Span::styled(
+                    "  ▍",
+                    Style::default().fg(Color::Rgb(187, 154, 247)),
+                )));
+            } else {
+                // Append blinking cursor to the last line of streaming text
+                if let Some(last_line) = all_lines.last_mut() {
+                    let mut spans: Vec<Span> = last_line.spans.clone();
+                    spans.push(Span::styled(
+                        "▍",
+                        Style::default().fg(Color::Rgb(187, 154, 247)),
+                    ));
+                    *last_line = Line::from(spans);
+                }
+            }
         }
     }
 
@@ -171,6 +174,24 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
         InputMode::Command => Span::styled(" CMD ", Style::default().bg(Color::Rgb(224, 175, 104)).fg(Color::Rgb(26, 27, 38)).add_modifier(Modifier::BOLD)),
     };
 
+    // Build right-side title spans
+    let line_count = app.input.lines().count();
+    let has_trailing_newline = app.input.ends_with('\n');
+    let effective_lines = if has_trailing_newline { line_count + 1 } else { line_count };
+    let mut right_title_spans: Vec<Span> = Vec::new();
+    if effective_lines > 1 {
+        right_title_spans.push(Span::styled(
+            format!(" [{} lines] ", effective_lines),
+            Style::default().fg(Color::Rgb(86, 95, 137)),
+        ));
+    }
+    if app.streaming {
+        right_title_spans.push(Span::styled(
+            " streaming... ",
+            Style::default().fg(Color::Rgb(187, 154, 247)).add_modifier(Modifier::ITALIC),
+        ));
+    }
+
     let input_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(match app.input_mode {
@@ -180,12 +201,7 @@ fn draw_input(f: &mut Frame, app: &App, area: Rect) {
         }))
         .border_type(BorderType::Rounded)
         .title(Line::from(mode_indicator).alignment(Alignment::Left))
-        .title(
-            Line::from(Span::styled(
-                if app.streaming { " streaming... " } else { "" },
-                Style::default().fg(Color::Rgb(187, 154, 247)).add_modifier(Modifier::ITALIC),
-            )).alignment(Alignment::Right)
-        );
+        .title(Line::from(right_title_spans).alignment(Alignment::Right));
 
     let display_text = if app.input_mode == InputMode::Command {
         format!(":{}", app.command_input)
@@ -266,14 +282,18 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
-    // Right side: message count
-    let msg_count = format!(
-        " {}msgs ",
-        app.messages.iter().filter(|m| m.role == "user").count()
-    );
+    // Right side: message count and conversation size
+    let total_chars: usize = app.messages.iter().map(|m| m.content.len()).sum();
+    let size_display = if total_chars >= 1000 {
+        format!("{:.1}k", total_chars as f64 / 1000.0)
+    } else {
+        format!("{}", total_chars)
+    };
+    let msg_count = app.messages.iter().filter(|m| m.role == "user").count();
+    let right_text = format!(" {size_display} chars | {msg_count}msgs ");
 
     let left = Line::from(spans);
-    let right = Span::styled(msg_count, Style::default().fg(Color::Rgb(86, 95, 137)));
+    let right = Span::styled(right_text, Style::default().fg(Color::Rgb(86, 95, 137)));
 
     let bar = Paragraph::new(left)
         .style(Style::default().bg(Color::Rgb(26, 27, 38)));
