@@ -148,6 +148,16 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> KeyAction {
             KeyAction::Consumed
         }
 
+        // Undo/redo
+        (KeyModifiers::NONE, KeyCode::Char('u')) => {
+            app.undo();
+            KeyAction::Consumed
+        }
+        (KeyModifiers::SHIFT, KeyCode::Char('U')) => {
+            app.redo();
+            KeyAction::Consumed
+        }
+
         // Overlays
         (KeyModifiers::NONE, KeyCode::Char('?')) => {
             app.overlay = Overlay::Help;
