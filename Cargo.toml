@@ -1,0 +1,62 @@
+[package]
+name = "pro-chat"
+version = "0.1.0"
+edition = "2024"
+description = "A fast TUI chat CLI with vim keybindings and coding abilities"
+license = "MIT"
+authors = ["Teddy Tennant"]
+
+[[bin]]
+name = "pro"
+path = "src/main.rs"
+
+[dependencies]
+# TUI
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
+
+# HTTP & streaming
+reqwest = { version = "0.12", features = ["json", "stream"] }
+futures = "0.3"
+eventsource-stream = "0.2"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Config & paths
+dirs = "6"
+toml = "0.8"
+
+# Syntax highlighting
+syntect = "5"
+
+# Clipboard
+arboard = "3"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+
+# Error handling
+anyhow = "1"
+
+# Misc
+unicode-width = "0.2"
+textwrap = "0.16"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
