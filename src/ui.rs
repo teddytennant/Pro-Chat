@@ -1,5 +1,7 @@
+use chrono::Timelike;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
+use chrono::Local;
 
 use crate::app::{App, InputMode, Overlay};
 use crate::markdown;
@@ -89,17 +91,48 @@ fn draw_messages(f: &mut Frame, app: &mut App, area: Rect) {
             _ => ("System", Color::Rgb(86, 95, 137)),
         };
 
+        let local_time = msg.timestamp.with_timezone(&Local);
+        let time_str = format!("  {:02}:{:02}", local_time.hour(), local_time.minute());
         all_lines.push(Line::from(""));
-        all_lines.push(Line::from(Span::styled(
-            format!("  {label}"),
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        )));
+        all_lines.push(Line::from(vec![
+            Span::styled(
+                format!("  {label}"),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                time_str,
+                Style::default().fg(Color::Rgb(86, 95, 137)),
+            ),
+        ]));
 
         // Message content
         if msg.role == "assistant" {
             let parsed = markdown::parse_markdown(&msg.content);
+            let max_width = width.saturating_sub(4);
             for line in parsed {
-                all_lines.push(line);
+                // Word-wrap long lines that are a single plain-text span
+                let visible_width: usize = line.spans.iter().map(|s| s.content.len()).sum();
+                if visible_width > max_width && line.spans.len() == 1 {
+                    let text = line.spans[0].content.to_string();
+                    let style = line.spans[0].style;
+                    let mut current = String::new();
+                    for word in text.split_whitespace() {
+                        if current.is_empty() {
+                            current = word.to_string();
+                        } else if current.len() + 1 + word.len() > max_width {
+                            all_lines.push(Line::from(Span::styled(current.clone(), style)));
+                            current = word.to_string();
+                        } else {
+                            current.push(' ');
+                            current.push_str(word);
+                        }
+                    }
+                    if !current.is_empty() {
+                        all_lines.push(Line::from(Span::styled(current, style)));
+                    }
+                } else {
+                    all_lines.push(line);
+                }
             }
         } else {
             // User messages - plain text with wrapping
@@ -372,15 +405,27 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
-    // Right side: token estimate and message count
+    // Right side: token estimate, timing, and message count
     let estimated_tokens = app.estimate_tokens();
     let token_display = if estimated_tokens >= 1000 {
         format!("~{:.1}k", estimated_tokens as f64 / 1000.0)
     } else {
         format!("~{}", estimated_tokens)
     };
+    let timing_display = if app.streaming {
+        if let Some(start) = app.stream_start_time {
+            let elapsed = start.elapsed().as_secs_f64();
+            format!(" | streaming {elapsed:.1}s...")
+        } else {
+            String::new()
+        }
+    } else if let Some(duration) = app.last_response_time {
+        format!(" | {:.1}s", duration.as_secs_f64())
+    } else {
+        String::new()
+    };
     let msg_count = app.messages.iter().filter(|m| m.role == "user").count();
-    let right_text = format!(" {token_display} tokens | {msg_count}msgs ");
+    let right_text = format!(" {token_display} tokens{timing_display} | {msg_count}msgs ");
 
     let left = Line::from(spans);
     let right = Span::styled(right_text, Style::default().fg(Color::Rgb(86, 95, 137)));
