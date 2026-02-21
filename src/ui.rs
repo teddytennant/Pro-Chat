@@ -372,15 +372,15 @@ fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
-    // Right side: message count and conversation size
-    let total_chars: usize = app.messages.iter().map(|m| m.content.len()).sum();
-    let size_display = if total_chars >= 1000 {
-        format!("{:.1}k", total_chars as f64 / 1000.0)
+    // Right side: token estimate and message count
+    let estimated_tokens = app.estimate_tokens();
+    let token_display = if estimated_tokens >= 1000 {
+        format!("~{:.1}k", estimated_tokens as f64 / 1000.0)
     } else {
-        format!("{}", total_chars)
+        format!("~{}", estimated_tokens)
     };
     let msg_count = app.messages.iter().filter(|m| m.role == "user").count();
-    let right_text = format!(" {size_display} chars | {msg_count}msgs ");
+    let right_text = format!(" {token_display} tokens | {msg_count}msgs ");
 
     let left = Line::from(spans);
     let right = Span::styled(right_text, Style::default().fg(Color::Rgb(86, 95, 137)));
@@ -451,6 +451,7 @@ fn draw_help_overlay(f: &mut Frame, area: Rect) {
         Line::from(Span::raw("  /history     Browse history")),
         Line::from(Span::raw("  /nvim        Connect neovim")),
         Line::from(Span::raw("  /file <p>    Load file into input")),
+        Line::from(Span::raw("  /diff        Load git diff into input")),
         Line::from(Span::raw("  /save        Save config")),
         Line::from(Span::raw("  /quit        Quit")),
         Line::from(""),
