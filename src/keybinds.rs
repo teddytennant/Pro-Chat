@@ -14,6 +14,10 @@ pub enum KeyAction {
     SendMessage,
     /// Cancel current streaming
     CancelStream,
+    /// Retry/regenerate last assistant response
+    RetryMessage,
+    /// Edit last user message
+    EditLastMessage,
 }
 
 pub fn handle_key(app: &mut App, key: KeyEvent) -> KeyAction {
@@ -172,6 +176,16 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> KeyAction {
         (KeyModifiers::SHIFT, KeyCode::Char('N')) => {
             app.prev_search_match();
             KeyAction::Consumed
+        }
+
+        // Retry/regenerate last response
+        (KeyModifiers::CONTROL, KeyCode::Char('r')) => {
+            return KeyAction::RetryMessage;
+        }
+
+        // Edit last user message (only when input is empty to avoid conflicts)
+        (KeyModifiers::NONE, KeyCode::Char('e')) if app.input.is_empty() => {
+            return KeyAction::EditLastMessage;
         }
 
         // Yank (copy) last response
