@@ -12,6 +12,10 @@ pub struct Config {
     pub anthropic_api_key: Option<String>,
     #[serde(default)]
     pub openai_api_key: Option<String>,
+    #[serde(default)]
+    pub openrouter_api_key: Option<String>,
+    #[serde(default)]
+    pub xai_api_key: Option<String>,
     #[serde(default = "default_max_tokens")]
     pub max_tokens: u32,
     #[serde(default = "default_temperature")]
@@ -198,7 +202,22 @@ impl Config {
                 .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok()),
             "openai" => self.openai_api_key.clone()
                 .or_else(|| std::env::var("OPENAI_API_KEY").ok()),
+            "openrouter" => self.openrouter_api_key.clone()
+                .or_else(|| std::env::var("OPENROUTER_API_KEY").ok()),
+            "xai" => self.xai_api_key.clone()
+                .or_else(|| std::env::var("XAI_API_KEY").ok()),
             _ => None,
+        }
+    }
+
+    /// Return the environment variable name for the current provider's API key.
+    pub fn api_key_env_var(&self) -> &str {
+        match self.provider.as_str() {
+            "anthropic" => "ANTHROPIC_API_KEY",
+            "openai" => "OPENAI_API_KEY",
+            "openrouter" => "OPENROUTER_API_KEY",
+            "xai" => "XAI_API_KEY",
+            _ => "API_KEY",
         }
     }
 
@@ -220,6 +239,8 @@ impl Default for Config {
             model: default_model(),
             anthropic_api_key: None,
             openai_api_key: None,
+            openrouter_api_key: None,
+            xai_api_key: None,
             max_tokens: default_max_tokens(),
             temperature: default_temperature(),
             system_prompt: default_system_prompt(),
