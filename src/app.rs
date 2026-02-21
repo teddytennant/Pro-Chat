@@ -857,11 +857,19 @@ impl App {
             }
             "/model" | "/m" => {
                 if let Some(model) = parts.get(1) {
-                    self.config.model = model.to_string();
-                    self.status_message = Some(format!("Model set to {model}"));
+                    let resolved = Self::resolve_model_alias(model);
+                    self.config.model = resolved.clone();
+                    self.status_message = Some(format!("Model set to {resolved}"));
                 } else {
                     self.status_message = Some(format!("Current model: {}", self.config.model));
                 }
+            }
+            "/models" => {
+                self.status_message = Some(
+                    "Model aliases: sonnet/s -> claude-sonnet-4-20250514, opus/o -> claude-opus-4-20250514, \
+                     haiku/h -> claude-haiku-4-5-20251001, gpt4 -> gpt-4o, gpt4m -> gpt-4o-mini"
+                        .into(),
+                );
             }
             "/provider" | "/p" => {
                 if let Some(provider) = parts.get(1) {
@@ -1106,6 +1114,52 @@ impl App {
                 self.cursor_pos = 0;
                 self.edit_last_message();
                 return Ok(());
+            }
+            "/run" | "/!" => {
+                if let Some(cmd_str) = parts.get(1) {
+                    let cmd_str = cmd_str.trim();
+                    if cmd_str.is_empty() {
+                        self.status_message = Some("Usage: /run <command>".into());
+                    } else {
+                        match std::process::Command::new("sh")
+                            .arg("-c")
+                            .arg(cmd_str)
+                            .output()
+                        {
+                            Ok(output) => {
+                                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                                let full_output = if stderr.is_empty() {
+                                    stdout.clone()
+                                } else if stdout.is_empty() {
+                                    format!("stderr: {stderr}")
+                                } else {
+                                    format!("{stdout}\nstderr: {stderr}")
+                                };
+                                let full_output = full_output.trim().to_string();
+
+                                if full_output.len() > 200 {
+                                    let truncated: String = full_output.chars().take(200).collect();
+                                    self.status_message = Some(format!("$ {cmd_str}: {truncated}..."));
+                                    self.input = format!(
+                                        "Output of `{cmd_str}`:\n```\n{full_output}\n```\n"
+                                    );
+                                    self.cursor_pos = 0;
+                                } else if full_output.is_empty() {
+                                    let code = output.status.code().unwrap_or(-1);
+                                    self.status_message = Some(format!("$ {cmd_str}: (exit {code}, no output)"));
+                                } else {
+                                    self.status_message = Some(format!("$ {cmd_str}: {full_output}"));
+                                }
+                            }
+                            Err(e) => {
+                                self.status_message = Some(format!("Failed to run: {e}"));
+                            }
+                        }
+                    }
+                } else {
+                    self.status_message = Some("Usage: /run <command>".into());
+                }
             }
             "/quit" | "/q" => {
                 self.should_quit = true;
@@ -1492,11 +1546,21 @@ impl App {
         if !self.input.starts_with('/') {
             return;
         }
+
+        // Check if we should do file path completion instead of command completion
+        let file_cmd_prefixes = ["/file ", "/f ", "/export "];
+        for prefix in &file_cmd_prefixes {
+            if self.input.starts_with(prefix) {
+                self.tab_complete_path(prefix);
+                return;
+            }
+        }
+
         let commands = [
-            "/clear", "/new", "/model", "/provider", "/system",
+            "/clear", "/new", "/model", "/models", "/provider", "/system",
             "/history", "/help", "/temp", "/save", "/nvim", "/tools", "/file",
             "/context", "/paste", "/resume", "/diff", "/export", "/theme",
-            "/retry", "/edit", "/quit",
+            "/retry", "/edit", "/quit", "/run",
         ];
         let matches: Vec<&&str> = commands.iter()
             .filter(|c| c.starts_with(&self.input))
@@ -1509,6 +1573,102 @@ impl App {
                 matches.iter().map(|m| m.to_string()).collect::<Vec<_>>().join("  ")
             );
         }
+    }
+
+    /// Tab-complete a file path after a slash command prefix (e.g. "/file ", "/export ").
+    fn tab_complete_path(&mut self, prefix: &str) {
+        let partial = &self.input[prefix.len()..];
+        let partial_path = std::path::Path::new(partial);
+
+        // Determine the directory to list and the prefix to match against
+        let (dir, name_prefix) = if partial.is_empty() {
+            // No path typed yet - list current directory
+            (std::path::PathBuf::from("."), String::new())
+        } else if partial.ends_with('/') || partial.ends_with(std::path::MAIN_SEPARATOR) {
+            // Trailing slash - list that directory
+            (std::path::PathBuf::from(partial), String::new())
+        } else {
+            // Partial filename - list parent and filter by prefix
+            let parent = partial_path.parent()
+                .map(|p| if p.as_os_str().is_empty() { std::path::Path::new(".") } else { p })
+                .unwrap_or(std::path::Path::new("."));
+            let file_prefix = partial_path.file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or_default();
+            (parent.to_path_buf(), file_prefix)
+        };
+
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(rd) => rd,
+            Err(_) => {
+                self.status_message = Some(format!("Cannot read directory: {}", dir.display()));
+                return;
+            }
+        };
+
+        let mut matches: Vec<String> = Vec::new();
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name_prefix.is_empty() || name.starts_with(&name_prefix) {
+                // Build the full path string relative to what was typed
+                let full = if partial.is_empty() {
+                    name.clone()
+                } else if partial.ends_with('/') || partial.ends_with(std::path::MAIN_SEPARATOR) {
+                    format!("{}{}", partial, name)
+                } else {
+                    let parent_str = partial_path.parent()
+                        .map(|p| {
+                            let s = p.to_string_lossy().to_string();
+                            if s.is_empty() { String::new() } else { format!("{}/", s) }
+                        })
+                        .unwrap_or_default();
+                    format!("{}{}", parent_str, name)
+                };
+
+                // Append '/' for directories
+                let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+                if is_dir {
+                    matches.push(format!("{}/", full));
+                } else {
+                    matches.push(full);
+                }
+            }
+        }
+
+        matches.sort();
+
+        if matches.len() == 1 {
+            self.input = format!("{}{}", prefix, matches[0]);
+            self.cursor_pos = self.input.len();
+        } else if matches.is_empty() {
+            self.status_message = Some("No matches".into());
+        } else {
+            // Show options in status, limit to avoid overflow
+            let display: Vec<&str> = matches.iter().map(|s| s.as_str()).take(15).collect();
+            let suffix = if matches.len() > 15 {
+                format!(" ... ({} total)", matches.len())
+            } else {
+                String::new()
+            };
+            self.status_message = Some(format!("{}{}", display.join("  "), suffix));
+
+            // Auto-complete the common prefix among matches
+            if let Some(common) = common_prefix(&matches) {
+                if common.len() > partial.len() {
+                    self.input = format!("{}{}", prefix, common);
+                    self.cursor_pos = self.input.len();
+                }
+            }
+        }
+    }
+
+    /// Clear the conversation (same as /clear command).
+    pub fn clear_conversation(&mut self) {
+        self.messages.clear();
+        self.api_messages.clear();
+        self.tool_invocations.clear();
+        self.conversation = Conversation::new();
+        self.status_message = Some("Conversation cleared".into());
     }
 
     pub fn overlay_scroll_down(&mut self) {
@@ -1616,9 +1776,40 @@ impl App {
         }
     }
 
+    /// Resolve a short model alias to its full model identifier.
+    /// If the alias is not recognized, the input is returned unchanged.
+    fn resolve_model_alias(alias: &str) -> String {
+        match alias.trim() {
+            "sonnet" | "s" => "claude-sonnet-4-20250514".into(),
+            "opus" | "o" => "claude-opus-4-20250514".into(),
+            "haiku" | "h" => "claude-haiku-4-5-20251001".into(),
+            "gpt4" => "gpt-4o".into(),
+            "gpt4m" => "gpt-4o-mini".into(),
+            other => other.to_string(),
+        }
+    }
+
     pub fn load_history_list(&mut self) {
         self.history_list = Conversation::list_all().unwrap_or_default();
         self.overlay_scroll = 0;
+    }
+
+    /// Delete the currently selected conversation from the history overlay.
+    pub fn delete_history_entry(&mut self) {
+        if let Some(conv) = self.history_list.get(self.overlay_scroll) {
+            let title = conv.title.clone();
+            let id = conv.id.clone();
+            if Conversation::delete(&id).is_ok() {
+                self.status_message = Some(format!("Deleted conversation: {title}"));
+                self.load_history_list();
+                // Adjust scroll if we deleted the last item
+                if self.overlay_scroll >= self.history_list.len() && self.overlay_scroll > 0 {
+                    self.overlay_scroll -= 1;
+                }
+            } else {
+                self.status_message = Some("Failed to delete conversation".into());
+            }
+        }
     }
 
     pub fn execute_command(&mut self, cmd: &str) {
