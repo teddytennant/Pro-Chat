@@ -1,3 +1,4 @@
+use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -19,6 +20,8 @@ pub struct Config {
     pub system_prompt: Option<String>,
     #[serde(default = "default_theme")]
     pub theme: Theme,
+    #[serde(default = "default_theme_name")]
+    pub theme_name: String,
     #[serde(default)]
     pub neovim: NeovimConfig,
     #[serde(default)]
@@ -60,11 +63,78 @@ fn default_system_prompt() -> Option<String> {
     Some("You are a helpful AI assistant. When writing code, you are precise and produce clean, working code. You format responses using markdown. When asked to edit files or write code, use the available tools to read, write, and edit files directly. Be concise but thorough.".into())
 }
 
+fn default_theme_name() -> String { "tokyo-night".into() }
 fn default_accent_color() -> String { "#7aa2f7".into() }
 fn default_user_color() -> String { "#9ece6a".into() }
 fn default_assistant_color() -> String { "#bb9af7".into() }
 fn default_border_color() -> String { "#3b4261".into() }
 fn default_dim_color() -> String { "#565f89".into() }
+
+/// Resolved theme colors for use in the UI.
+#[derive(Debug, Clone, Copy)]
+pub struct ThemeColors {
+    pub accent: Color,
+    pub user_label: Color,
+    pub assistant_label: Color,
+    pub border: Color,
+    pub dim: Color,
+    pub bg_dark: Color,
+    pub fg: Color,
+    pub warning: Color,
+    pub success: Color,
+}
+
+/// Return the ThemeColors for a given theme name.
+/// Falls back to tokyo-night for unknown names.
+pub fn get_theme(name: &str) -> ThemeColors {
+    match name {
+        "catppuccin" => ThemeColors {
+            accent: Color::Rgb(0x89, 0xb4, 0xfa),
+            user_label: Color::Rgb(0xa6, 0xe3, 0xa1),
+            assistant_label: Color::Rgb(0xcb, 0xa6, 0xf7),
+            border: Color::Rgb(0x45, 0x47, 0x5a),
+            dim: Color::Rgb(0x6c, 0x70, 0x86),
+            bg_dark: Color::Rgb(0x1e, 0x1e, 0x2e),
+            fg: Color::Rgb(0xcd, 0xd6, 0xf4),
+            warning: Color::Rgb(0xf9, 0xe2, 0xaf),
+            success: Color::Rgb(0xa6, 0xe3, 0xa1),
+        },
+        "gruvbox" => ThemeColors {
+            accent: Color::Rgb(0x83, 0xa5, 0x98),
+            user_label: Color::Rgb(0xb8, 0xbb, 0x26),
+            assistant_label: Color::Rgb(0xd3, 0x86, 0x9b),
+            border: Color::Rgb(0x50, 0x49, 0x45),
+            dim: Color::Rgb(0x92, 0x83, 0x74),
+            bg_dark: Color::Rgb(0x1d, 0x20, 0x21),
+            fg: Color::Rgb(0xeb, 0xdb, 0xb2),
+            warning: Color::Rgb(0xfa, 0xbd, 0x2f),
+            success: Color::Rgb(0xb8, 0xbb, 0x26),
+        },
+        "dracula" => ThemeColors {
+            accent: Color::Rgb(0x8b, 0xe9, 0xfd),
+            user_label: Color::Rgb(0x50, 0xfa, 0x7b),
+            assistant_label: Color::Rgb(0xbd, 0x93, 0xf9),
+            border: Color::Rgb(0x44, 0x47, 0x5a),
+            dim: Color::Rgb(0x62, 0x72, 0xa4),
+            bg_dark: Color::Rgb(0x21, 0x22, 0x2c),
+            fg: Color::Rgb(0xf8, 0xf8, 0xf2),
+            warning: Color::Rgb(0xf1, 0xfa, 0x8c),
+            success: Color::Rgb(0x50, 0xfa, 0x7b),
+        },
+        // tokyo-night (default)
+        _ => ThemeColors {
+            accent: Color::Rgb(0x7a, 0xa2, 0xf7),
+            user_label: Color::Rgb(0x9e, 0xce, 0x6a),
+            assistant_label: Color::Rgb(0xbb, 0x9a, 0xf7),
+            border: Color::Rgb(0x3b, 0x42, 0x61),
+            dim: Color::Rgb(0x56, 0x5f, 0x89),
+            bg_dark: Color::Rgb(0x16, 0x16, 0x1e),
+            fg: Color::Rgb(0xc0, 0xca, 0xf5),
+            warning: Color::Rgb(0xe0, 0xaf, 0x68),
+            success: Color::Rgb(0x9e, 0xce, 0x6a),
+        },
+    }
+}
 
 fn default_theme() -> Theme {
     Theme {
@@ -152,6 +222,7 @@ impl Default for Config {
             temperature: default_temperature(),
             system_prompt: default_system_prompt(),
             theme: default_theme(),
+            theme_name: default_theme_name(),
             neovim: NeovimConfig::default(),
             vim_mode: false,
             last_conversation_id: None,
