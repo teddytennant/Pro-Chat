@@ -33,3 +33,23 @@ end, { nargs = "+", desc = "Ask pro-chat a question about the current buffer" })
 vim.api.nvim_create_user_command("ProChatFile", function()
   pro_chat.send_file()
 end, { desc = "Send the current file to pro-chat as context" })
+
+-- :ProChatReview  -- review the current file's git diff
+vim.api.nvim_create_user_command("ProChatReview", function()
+  pro_chat.review()
+end, { desc = "Review the current file's git changes in pro-chat" })
+
+-- :ProChatExplain  -- explain visual selection or whole buffer
+vim.api.nvim_create_user_command("ProChatExplain", function(cmd)
+  pro_chat.explain(cmd.range > 0)
+end, { range = true, desc = "Explain code in pro-chat" })
+
+-- :ProChatRefactor  -- refactor visual selection
+vim.api.nvim_create_user_command("ProChatRefactor", function(cmd)
+  pro_chat.refactor(cmd.range > 0)
+end, { range = true, desc = "Refactor code via pro-chat" })
+
+-- :ProChatTest  -- generate tests for visual selection or whole buffer
+vim.api.nvim_create_user_command("ProChatTest", function(cmd)
+  pro_chat.test(cmd.range > 0)
+end, { range = true, desc = "Generate tests via pro-chat" })
