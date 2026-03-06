@@ -4,7 +4,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 
 use crate::api::{ApiClient, Message, MessageContent};
-use crate::config::{Config, ThemeColors, get_theme};
+use crate::config::{Config, ThemeColors, clamp_temperature, get_theme};
 use crate::event::{Event, EventHandler};
 use crate::history::Conversation;
 use crate::keybinds::{handle_key, KeyAction};
@@ -21,6 +21,7 @@ pub enum InputMode {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum Overlay {
     None,
     Help,
@@ -147,10 +148,6 @@ pub struct App {
     pub tools_enabled: bool,
     /// Whether we're in visual selection mode (for code block picking)
     pub visual_mode: bool,
-    /// Start message index for visual selection
-    pub visual_start: usize,
-    /// End message index for visual selection (multi-message select)
-    pub visual_end: usize,
     /// Extracted code blocks: (message_index, language, content)
     pub code_blocks: Vec<(usize, String, String)>,
     /// Search query string (for / search mode)
@@ -172,7 +169,6 @@ pub struct App {
     /// Redo stack for input field: (input_text, cursor_pos)
     pub redo_stack: Vec<(String, usize)>,
     pub setup_state: SetupState,
-    api_client: ApiClient,
     event_tx: Option<mpsc::UnboundedSender<Event>>,
 }
 
@@ -231,8 +227,6 @@ impl App {
             api_messages: Vec::new(),
             tools_enabled: true,
             visual_mode: false,
-            visual_start: 0,
-            visual_end: 0,
             code_blocks: Vec::new(),
             search_query: String::new(),
             search_matches: Vec::new(),
@@ -244,7 +238,6 @@ impl App {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             setup_state: SetupState::new(),
-            api_client: ApiClient::new(),
             event_tx: None,
         };
 
@@ -711,7 +704,7 @@ impl App {
     async fn send_tool_results(&mut self) {
         let mut tool_results: Vec<Value> = Vec::new();
 
-        for (i, call) in self.pending_tool_calls.iter().enumerate() {
+        for call in self.pending_tool_calls.iter() {
             let result = if let Some(inv) = self.tool_invocations.iter().rev()
                 .find(|inv| inv.tool_name == call.tool.name())
             {
@@ -726,7 +719,6 @@ impl App {
                 "content": result.output,
                 "is_error": !result.success,
             }));
-            let _ = i; // used in iteration
         }
 
         if tool_results.is_empty() {
@@ -1065,6 +1057,7 @@ impl App {
             "/temp" | "/t" => {
                 if let Some(temp) = parts.get(1) {
                     if let Ok(t) = temp.parse::<f32>() {
+                        let t = clamp_temperature(t);
                         self.config.temperature = t;
                         self.status_message = Some(format!("Temperature set to {t}"));
                     }
@@ -2105,6 +2098,7 @@ impl App {
             "temp" | "temperature" => {
                 if let Some(val) = parts.get(1) {
                     if let Ok(t) = val.trim().parse::<f32>() {
+                        let t = clamp_temperature(t);
                         self.config.temperature = t;
                         self.status_message = Some(format!("Temperature: {t}"));
                     }
