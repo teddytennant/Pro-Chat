@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 pub enum Event {
     Key(KeyEvent),
     Mouse(MouseEvent),
-    Resize(u16, u16),
+    Resize(#[allow(dead_code)] u16, u16),
     Tick,
     ApiChunk(String),
     ApiDone,
