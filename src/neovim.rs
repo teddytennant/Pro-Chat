@@ -65,30 +65,6 @@ impl NeovimClient {
         Ok(())
     }
 
-    /// Open a file in Neovim
-    pub fn open_file(&self, path: &str) -> anyhow::Result<()> {
-        let mut stream = UnixStream::connect(&self.socket_path)?;
-        let request = json!([0, 1, "nvim_command", [format!("edit {path}")]]);
-        let data = serde_json::to_vec(&request)?;
-        stream.write_all(&data)?;
-        stream.flush()?;
-        Ok(())
-    }
-
-    /// Get current buffer content from Neovim
-    pub fn get_current_buffer(&self) -> anyhow::Result<String> {
-        let mut stream = UnixStream::connect(&self.socket_path)?;
-        let request = json!([0, 1, "nvim_exec2", ["echo join(getline(1, '$'), \"\\n\")", {"output": true}]]);
-        let data = serde_json::to_vec(&request)?;
-        stream.write_all(&data)?;
-        stream.flush()?;
-
-        // Read response - simplified, real impl would properly parse msgpack
-        let mut buf = [0u8; 65536];
-        let n = std::io::Read::read(&mut stream, &mut buf)?;
-        Ok(String::from_utf8_lossy(&buf[..n]).to_string())
-    }
-
     pub fn is_connected(&self) -> bool {
         UnixStream::connect(&self.socket_path).is_ok()
     }
