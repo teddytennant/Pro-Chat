@@ -151,10 +151,6 @@ impl ToolExecutor {
             .unwrap_or_default()
     }
 
-    pub fn set_command_timeout(&mut self, timeout: Duration) {
-        self.command_timeout = timeout;
-    }
-
     // -- execution ------------------------------------------------------------
 
     /// Execute a tool, returning the result.
@@ -682,7 +678,7 @@ fn wait_with_timeout(
 
     loop {
         match child.try_wait() {
-            Ok(Some(_status)) => {
+            Ok(Some(status)) => {
                 // Child has exited; collect output.
                 let mut stdout = Vec::new();
                 let mut stderr = Vec::new();
@@ -695,7 +691,7 @@ fn wait_with_timeout(
                         .unwrap_or_default();
                 }
                 return Ok(std::process::Output {
-                    status: _status,
+                    status,
                     stdout,
                     stderr,
                 });
