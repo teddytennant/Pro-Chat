@@ -187,15 +187,6 @@ impl Config {
         Ok(())
     }
 
-    pub fn api_key(&self) -> Option<&str> {
-        match self.provider.as_str() {
-            "anthropic" => self.anthropic_api_key.as_deref()
-                .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok().as_deref().map(|_| unreachable!())),
-            "openai" => self.openai_api_key.as_deref(),
-            _ => None,
-        }
-    }
-
     pub fn api_key_from_env(&self) -> Option<String> {
         match self.provider.as_str() {
             "anthropic" => self.anthropic_api_key.clone()
@@ -224,21 +215,6 @@ impl Config {
     /// Check whether the current provider has an API key set (config or env).
     pub fn has_api_key(&self) -> bool {
         self.api_key_from_env().is_some()
-    }
-
-    /// Return the API key field for a specific provider (from config or env).
-    pub fn api_key_for_provider(&self, provider: &str) -> Option<String> {
-        match provider {
-            "anthropic" => self.anthropic_api_key.clone()
-                .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok()),
-            "openai" => self.openai_api_key.clone()
-                .or_else(|| std::env::var("OPENAI_API_KEY").ok()),
-            "openrouter" => self.openrouter_api_key.clone()
-                .or_else(|| std::env::var("OPENROUTER_API_KEY").ok()),
-            "xai" => self.xai_api_key.clone()
-                .or_else(|| std::env::var("XAI_API_KEY").ok()),
-            _ => None,
-        }
     }
 
     /// Set the API key for a specific provider.
@@ -282,5 +258,98 @@ impl Default for Config {
             last_conversation_id: None,
             notify_on_complete: true,
         }
+    }
+}
+
+/// Clamp a temperature value to the valid API range [0.0, 2.0].
+pub fn clamp_temperature(t: f32) -> f32 {
+    t.clamp(0.0, 2.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clamp_temperature_normal() {
+        assert_eq!(clamp_temperature(0.7), 0.7);
+        assert_eq!(clamp_temperature(0.0), 0.0);
+        assert_eq!(clamp_temperature(1.0), 1.0);
+        assert_eq!(clamp_temperature(2.0), 2.0);
+    }
+
+    #[test]
+    fn test_clamp_temperature_out_of_range() {
+        assert_eq!(clamp_temperature(-1.0), 0.0);
+        assert_eq!(clamp_temperature(3.0), 2.0);
+        assert_eq!(clamp_temperature(-0.1), 0.0);
+        assert_eq!(clamp_temperature(2.5), 2.0);
+    }
+
+    #[test]
+    fn test_default_config_values() {
+        let config = Config::default();
+        assert_eq!(config.provider, "anthropic");
+        assert_eq!(config.model, "claude-sonnet-4-20250514");
+        assert_eq!(config.max_tokens, 8192);
+        assert_eq!(config.temperature, 0.7);
+        assert!(config.system_prompt.is_some());
+        assert_eq!(config.theme_name, "tokyo-night");
+        assert!(!config.vim_mode);
+        assert!(config.notify_on_complete);
+    }
+
+    #[test]
+    fn test_api_key_from_env_without_keys() {
+        let config = Config::default();
+        // With no keys set and no env vars, should return None
+        // (env vars may or may not be set in the test environment,
+        // so we just verify the method doesn't panic)
+        let _ = config.api_key_from_env();
+    }
+
+    #[test]
+    fn test_set_api_key_for_provider() {
+        let mut config = Config::default();
+        config.set_api_key_for_provider("anthropic", "sk-test-123".into());
+        assert_eq!(config.anthropic_api_key, Some("sk-test-123".into()));
+
+        config.set_api_key_for_provider("openai", "sk-openai-456".into());
+        assert_eq!(config.openai_api_key, Some("sk-openai-456".into()));
+    }
+
+    #[test]
+    fn test_api_key_env_var_names() {
+        let mut config = Config::default();
+        assert_eq!(config.api_key_env_var(), "ANTHROPIC_API_KEY");
+
+        config.provider = "openai".into();
+        assert_eq!(config.api_key_env_var(), "OPENAI_API_KEY");
+
+        config.provider = "openrouter".into();
+        assert_eq!(config.api_key_env_var(), "OPENROUTER_API_KEY");
+
+        config.provider = "xai".into();
+        assert_eq!(config.api_key_env_var(), "XAI_API_KEY");
+
+        config.provider = "unknown".into();
+        assert_eq!(config.api_key_env_var(), "API_KEY");
+    }
+
+    #[test]
+    fn test_get_theme_known_names() {
+        let _ = get_theme("tokyo-night");
+        let _ = get_theme("catppuccin");
+        let _ = get_theme("gruvbox");
+        let _ = get_theme("dracula");
+    }
+
+    #[test]
+    fn test_get_theme_unknown_falls_back() {
+        let unknown = get_theme("nonexistent");
+        let default = get_theme("tokyo-night");
+        // Should get the same colors as tokyo-night (the default fallback)
+        assert!(matches!(unknown.accent, Color::Rgb(0x7a, 0xa2, 0xf7)));
+        assert!(matches!(default.accent, Color::Rgb(0x7a, 0xa2, 0xf7)));
     }
 }
