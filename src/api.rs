@@ -21,26 +21,6 @@ pub enum MessageContent {
     Blocks(Vec<Value>),
 }
 
-impl MessageContent {
-    pub fn as_text(&self) -> String {
-        match self {
-            MessageContent::Text(s) => s.clone(),
-            MessageContent::Blocks(blocks) => {
-                blocks.iter()
-                    .filter_map(|b| {
-                        if b["type"] == "text" {
-                            b["text"].as_str().map(|s| s.to_string())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join("")
-            }
-        }
-    }
-}
-
 pub struct ApiClient {
     client: Client,
 }
@@ -288,21 +268,4 @@ impl ApiClient {
         Ok(())
     }
 
-    pub async fn stream_openai(
-        &self,
-        api_key: &str,
-        model: &str,
-        messages: &[Message],
-        system_prompt: Option<&str>,
-        max_tokens: u32,
-        temperature: f32,
-        tx: mpsc::UnboundedSender<Event>,
-    ) -> anyhow::Result<()> {
-        self.stream_openai_compatible(
-            api_key, model, messages, system_prompt,
-            max_tokens, temperature, tx,
-            "https://api.openai.com/v1/chat/completions",
-            &[],
-        ).await
-    }
 }
