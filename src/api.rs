@@ -21,6 +21,7 @@ pub enum MessageContent {
     Blocks(Vec<Value>),
 }
 
+#[derive(Clone)]
 pub struct ApiClient {
     client: Client,
 }

@@ -146,6 +146,8 @@ pub struct App {
     pub api_messages: Vec<Message>,
     /// Whether tools are enabled for this session
     pub tools_enabled: bool,
+    /// Shared HTTP client for connection pooling across API calls.
+    api_client: ApiClient,
     /// Whether we're in visual selection mode (for code block picking)
     pub visual_mode: bool,
     /// Extracted code blocks: (message_index, language, content)
@@ -225,6 +227,7 @@ impl App {
             pending_tool_confirm_idx: 0,
             tool_invocations: Vec::new(),
             api_messages: Vec::new(),
+            api_client: ApiClient::new(),
             tools_enabled: true,
             visual_mode: false,
             code_blocks: Vec::new(),
@@ -383,6 +386,11 @@ impl App {
                             self.last_response_time = Some(start.elapsed());
                         }
                         if !self.stream_buffer.is_empty() {
+                            // Keep api_messages in sync for streamed responses
+                            self.api_messages.push(Message {
+                                role: "assistant".into(),
+                                content: MessageContent::Text(self.stream_buffer.clone()),
+                            });
                             self.conversation.add_message("assistant", &self.stream_buffer);
                             self.save_and_track_conversation();
                         }
@@ -765,7 +773,7 @@ impl App {
         let temp = self.config.temperature;
         let messages = self.api_messages.clone();
         let tools_enabled = self.tools_enabled && provider == "anthropic";
-        let client = ApiClient::new();
+        let client = self.api_client.clone();
 
         tokio::spawn(async move {
             let result = match provider.as_str() {
@@ -1319,14 +1327,10 @@ impl App {
                 }
             }
             "/undo" => {
-                self.input.clear();
-                self.cursor_pos = 0;
                 self.undo();
                 return Ok(());
             }
             "/redo" => {
-                self.input.clear();
-                self.cursor_pos = 0;
                 self.redo();
                 return Ok(());
             }
@@ -1404,7 +1408,20 @@ impl App {
         self.streaming = false;
         self.stream_start_time = None;
         if !self.stream_buffer.is_empty() {
+            // Keep the partial response in api_messages so context is preserved
+            self.api_messages.push(Message {
+                role: "assistant".into(),
+                content: MessageContent::Text(self.stream_buffer.clone()),
+            });
             self.conversation.add_message("assistant", &self.stream_buffer);
+            self.save_and_track_conversation();
+        } else {
+            // Remove the empty assistant placeholder from display messages
+            if let Some(last) = self.messages.last() {
+                if last.role == "assistant" && last.content.is_empty() {
+                    self.messages.pop();
+                }
+            }
         }
         self.stream_buffer.clear();
         self.status_message = Some("Stream cancelled".into());
