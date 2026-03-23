@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tokio::process::Command as TokioCommand;
 
 // ---------------------------------------------------------------------------
 // Tool definition
@@ -157,13 +158,13 @@ impl ToolExecutor {
     ///
     /// The caller is responsible for checking [`ToolPermission`] *before*
     /// calling this method.
-    pub fn execute(&self, tool: &Tool) -> ToolResult {
+    pub async fn execute(&self, tool: &Tool) -> ToolResult {
         match tool {
             Tool::ReadFile { path } => self.read_file(path),
             Tool::WriteFile { path, content } => self.write_file(path, content),
             Tool::ListFiles { path, pattern } => self.list_files(path, pattern.as_deref()),
             Tool::SearchFiles { pattern, path } => self.search_files(pattern, path.as_deref()),
-            Tool::Execute { command } => self.execute_command(command),
+            Tool::Execute { command } => self.execute_command(command).await,
             Tool::EditFile {
                 path,
                 old_text,
@@ -307,25 +308,28 @@ impl ToolExecutor {
         }
     }
 
-    fn execute_command(&self, command: &str) -> ToolResult {
+    async fn execute_command(&self, command: &str) -> ToolResult {
         use std::process::Stdio;
 
-        let mut child = match Command::new("sh")
+        let child = match TokioCommand::new("sh")
             .arg("-c")
             .arg(command)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .kill_on_drop(true)
             .spawn()
         {
             Ok(c) => c,
             Err(e) => return ToolResult::err(format!("Failed to spawn command: {e}")),
         };
 
-        // Wait with timeout.
-        let result = wait_with_timeout(&mut child, self.command_timeout);
+        // Wait with async timeout — yields to the tokio runtime instead of
+        // blocking with thread::sleep.  `kill_on_drop(true)` ensures the child
+        // is killed if the future is cancelled (e.g. on timeout).
+        let result = tokio::time::timeout(self.command_timeout, child.wait_with_output()).await;
 
         match result {
-            Ok(output) => {
+            Ok(Ok(output)) => {
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
                 let code = output.status.code().unwrap_or(-1);
@@ -351,7 +355,14 @@ impl ToolExecutor {
                     ToolResult::err(format!("Exit code {code}\n{combined}"))
                 }
             }
-            Err(msg) => ToolResult::err(msg),
+            Ok(Err(e)) => ToolResult::err(format!("Error waiting for process: {e}")),
+            Err(_) => {
+                // Timeout elapsed — child is killed automatically via kill_on_drop.
+                ToolResult::err(format!(
+                    "Command timed out after {} seconds",
+                    self.command_timeout.as_secs()
+                ))
+            }
         }
     }
 
@@ -665,55 +676,6 @@ fn command_exists(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Wait for a child process with a timeout, killing it if it exceeds the limit.
-fn wait_with_timeout(
-    child: &mut std::process::Child,
-    timeout: Duration,
-) -> Result<std::process::Output, String> {
-    use std::thread;
-    use std::time::Instant;
-
-    let start = Instant::now();
-    let poll_interval = Duration::from_millis(100);
-
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                // Child has exited; collect output.
-                let mut stdout = Vec::new();
-                let mut stderr = Vec::new();
-                if let Some(ref mut out) = child.stdout {
-                    std::io::Read::read_to_end(out, &mut stdout)
-                        .unwrap_or_default();
-                }
-                if let Some(ref mut err) = child.stderr {
-                    std::io::Read::read_to_end(err, &mut stderr)
-                        .unwrap_or_default();
-                }
-                return Ok(std::process::Output {
-                    status,
-                    stdout,
-                    stderr,
-                });
-            }
-            Ok(None) => {
-                // Still running.
-                if start.elapsed() >= timeout {
-                    let _ = child.kill();
-                    let _ = child.wait(); // reap
-                    return Err(format!(
-                        "Command timed out after {} seconds",
-                        timeout.as_secs()
-                    ));
-                }
-                thread::sleep(poll_interval);
-            }
-            Err(e) => {
-                return Err(format!("Error waiting for process: {e}"));
-            }
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -786,18 +748,18 @@ mod tests {
         assert_eq!(defs.as_array().unwrap().len(), 6);
     }
 
-    #[test]
-    fn test_read_file_not_found() {
+    #[tokio::test]
+    async fn test_read_file_not_found() {
         let executor = ToolExecutor::new();
         let result = executor.execute(&Tool::ReadFile {
             path: "/tmp/__nonexistent_pro_chat_test__".into(),
-        });
+        }).await;
         assert!(!result.success);
         assert!(result.output.contains("not found"));
     }
 
-    #[test]
-    fn test_write_and_read_file() {
+    #[tokio::test]
+    async fn test_write_and_read_file() {
         let dir = std::env::temp_dir().join("pro_chat_test_write_read");
         let _ = fs::remove_dir_all(&dir);
 
@@ -807,12 +769,12 @@ mod tests {
         let write_result = executor.execute(&Tool::WriteFile {
             path: file_path.display().to_string(),
             content: "line one\nline two\n".into(),
-        });
+        }).await;
         assert!(write_result.success);
 
         let read_result = executor.execute(&Tool::ReadFile {
             path: file_path.display().to_string(),
-        });
+        }).await;
         assert!(read_result.success);
         assert!(read_result.output.contains("line one"));
         assert!(read_result.output.contains("line two"));
@@ -820,8 +782,8 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    #[test]
-    fn test_edit_file() {
+    #[tokio::test]
+    async fn test_edit_file() {
         let dir = std::env::temp_dir().join("pro_chat_test_edit");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -834,7 +796,7 @@ mod tests {
             path: file_path.display().to_string(),
             old_text: "Foo bar".into(),
             new_text: "Baz qux".into(),
-        });
+        }).await;
         assert!(result.success);
 
         let contents = fs::read_to_string(&file_path).unwrap();
@@ -844,8 +806,8 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    #[test]
-    fn test_edit_file_not_found_text() {
+    #[tokio::test]
+    async fn test_edit_file_not_found_text() {
         let dir = std::env::temp_dir().join("pro_chat_test_edit_nf");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
@@ -858,18 +820,18 @@ mod tests {
             path: file_path.display().to_string(),
             old_text: "zzz".into(),
             new_text: "yyy".into(),
-        });
+        }).await;
         assert!(!result.success);
 
         let _ = fs::remove_dir_all(&dir);
     }
 
-    #[test]
-    fn test_execute_command() {
+    #[tokio::test]
+    async fn test_execute_command() {
         let executor = ToolExecutor::new();
         let result = executor.execute(&Tool::Execute {
             command: "echo hello".into(),
-        });
+        }).await;
         assert!(result.success);
         assert!(result.output.contains("hello"));
     }

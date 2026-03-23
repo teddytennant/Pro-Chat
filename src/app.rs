@@ -487,7 +487,7 @@ impl App {
 
             match perm {
                 ToolPermission::AutoAllow => {
-                    self.execute_tool_at_index(self.pending_tool_confirm_idx);
+                    self.execute_tool_at_index(self.pending_tool_confirm_idx).await;
                     self.pending_tool_confirm_idx += 1;
                 }
                 ToolPermission::AskFirst => {
@@ -524,9 +524,9 @@ impl App {
         self.send_tool_results().await;
     }
 
-    fn execute_tool_at_index(&mut self, idx: usize) {
+    async fn execute_tool_at_index(&mut self, idx: usize) {
         let call = &self.pending_tool_calls[idx];
-        let result = self.tool_executor.execute(&call.tool);
+        let result = self.tool_executor.execute(&call.tool).await;
 
         let invocation = ToolInvocation {
             tool_name: call.tool.name().to_string(),
@@ -554,7 +554,7 @@ impl App {
             KeyCode::Char('y') | KeyCode::Enter => {
                 // Allow this tool
                 self.overlay = Overlay::None;
-                self.execute_tool_at_index(self.pending_tool_confirm_idx);
+                self.execute_tool_at_index(self.pending_tool_confirm_idx).await;
                 self.pending_tool_confirm_idx += 1;
                 self.process_next_tool_call().await;
             }
@@ -564,7 +564,7 @@ impl App {
                     .tool.name().to_string();
                 self.tool_executor.set_permission(&tool_name, ToolPermission::AutoAllow);
                 self.overlay = Overlay::None;
-                self.execute_tool_at_index(self.pending_tool_confirm_idx);
+                self.execute_tool_at_index(self.pending_tool_confirm_idx).await;
                 self.pending_tool_confirm_idx += 1;
                 self.process_next_tool_call().await;
             }
@@ -1951,10 +1951,13 @@ impl App {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| cwd.display().to_string());
 
-        // Get project file listing
+        // Get project file listing — use -type f and group -o with parens
+        // so the implicit -print only fires for files matching the name filters.
         let file_listing = std::process::Command::new("find")
             .arg(".")
             .args([
+                "-type", "f",
+                "(",
                 "-name", "*.rs",
                 "-o", "-name", "*.py",
                 "-o", "-name", "*.js",
@@ -1966,6 +1969,7 @@ impl App {
                 "-o", "-name", "*.yml",
                 "-o", "-name", "Makefile",
                 "-o", "-name", "Dockerfile",
+                ")",
             ])
             .output()
             .ok()
