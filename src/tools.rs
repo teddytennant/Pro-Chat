@@ -163,7 +163,7 @@ impl ToolExecutor {
             Tool::ReadFile { path } => self.read_file(path),
             Tool::WriteFile { path, content } => self.write_file(path, content),
             Tool::ListFiles { path, pattern } => self.list_files(path, pattern.as_deref()),
-            Tool::SearchFiles { pattern, path } => self.search_files(pattern, path.as_deref()),
+            Tool::SearchFiles { pattern, path } => self.search_files(pattern, path.as_deref()).await,
             Tool::Execute { command } => self.execute_command(command).await,
             Tool::EditFile {
                 path,
@@ -256,7 +256,7 @@ impl ToolExecutor {
         }
     }
 
-    fn search_files(&self, pattern: &str, path: Option<&str>) -> ToolResult {
+    async fn search_files(&self, pattern: &str, path: Option<&str>) -> ToolResult {
         let search_path = path.unwrap_or(".");
 
         // Try ripgrep first, fall back to grep.
@@ -283,7 +283,7 @@ impl ToolExecutor {
             )
         };
 
-        match Command::new(program).args(&args).output() {
+        match TokioCommand::new(program).args(&args).output().await {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();
