@@ -2191,3 +2191,503 @@ fn common_prefix(strings: &[String]) -> Option<String> {
     }
     Some(first[..prefix_len].to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    /// Create an App with default config for testing.
+    fn test_app() -> App {
+        App::new(Config::default())
+    }
+
+    // -----------------------------------------------------------------------
+    // Model alias resolution
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn resolve_model_alias_anthropic() {
+        assert_eq!(App::resolve_model_alias("sonnet"), "claude-sonnet-4-20250514");
+        assert_eq!(App::resolve_model_alias("s"), "claude-sonnet-4-20250514");
+        assert_eq!(App::resolve_model_alias("opus"), "claude-opus-4-20250514");
+        assert_eq!(App::resolve_model_alias("o"), "claude-opus-4-20250514");
+        assert_eq!(App::resolve_model_alias("haiku"), "claude-haiku-4-5-20251001");
+        assert_eq!(App::resolve_model_alias("h"), "claude-haiku-4-5-20251001");
+    }
+
+    #[test]
+    fn resolve_model_alias_openai() {
+        assert_eq!(App::resolve_model_alias("gpt4"), "gpt-4o");
+        assert_eq!(App::resolve_model_alias("gpt4m"), "gpt-4o-mini");
+    }
+
+    #[test]
+    fn resolve_model_alias_passthrough() {
+        assert_eq!(App::resolve_model_alias("my-custom-model"), "my-custom-model");
+        assert_eq!(App::resolve_model_alias("claude-sonnet-4-20250514"), "claude-sonnet-4-20250514");
+    }
+
+    #[test]
+    fn resolve_model_alias_xai() {
+        assert_eq!(App::resolve_model_alias("grok"), "grok-3");
+        assert_eq!(App::resolve_model_alias("grok3"), "grok-3");
+        assert_eq!(App::resolve_model_alias("grok3m"), "grok-3-mini");
+        assert_eq!(App::resolve_model_alias("grok2"), "grok-2");
+    }
+
+    #[test]
+    fn resolve_model_alias_openrouter() {
+        assert_eq!(App::resolve_model_alias("deepseek"), "deepseek/deepseek-chat-v3-0324");
+        assert_eq!(App::resolve_model_alias("llama"), "meta-llama/llama-4-maverick");
+        assert_eq!(App::resolve_model_alias("mistral"), "mistralai/mistral-large-latest");
+        assert_eq!(App::resolve_model_alias("gemini"), "google/gemini-2.5-pro-preview");
+    }
+
+    // -----------------------------------------------------------------------
+    // Slash commands
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn slash_clear_resets_state() {
+        let mut app = test_app();
+        app.messages.push(ChatMessage {
+            role: "user".into(),
+            content: "hello".into(),
+            timestamp: chrono::Utc::now(),
+            tool_invocations: Vec::new(),
+        });
+        app.api_messages.push(Message {
+            role: "user".into(),
+            content: MessageContent::Text("hello".into()),
+        });
+
+        app.handle_slash_command("/clear").unwrap();
+        assert!(app.messages.is_empty());
+        assert!(app.api_messages.is_empty());
+        assert_eq!(
+            app.status_message.as_deref(),
+            Some("Conversation cleared")
+        );
+    }
+
+    #[test]
+    fn slash_clear_alias() {
+        let mut app = test_app();
+        app.messages.push(ChatMessage {
+            role: "user".into(),
+            content: "test".into(),
+            timestamp: chrono::Utc::now(),
+            tool_invocations: Vec::new(),
+        });
+        app.handle_slash_command("/c").unwrap();
+        assert!(app.messages.is_empty());
+    }
+
+    #[test]
+    fn slash_model_sets_model() {
+        let mut app = test_app();
+        app.handle_slash_command("/model sonnet").unwrap();
+        assert_eq!(app.config.model, "claude-sonnet-4-20250514");
+
+        app.handle_slash_command("/m gpt4").unwrap();
+        assert_eq!(app.config.model, "gpt-4o");
+    }
+
+    #[test]
+    fn slash_model_without_arg_shows_current() {
+        let mut app = test_app();
+        app.config.model = "test-model".into();
+        app.handle_slash_command("/model").unwrap();
+        assert_eq!(
+            app.status_message.as_deref(),
+            Some("Current model: test-model")
+        );
+    }
+
+    #[test]
+    fn slash_provider_sets_provider() {
+        let mut app = test_app();
+        app.handle_slash_command("/provider openai").unwrap();
+        assert_eq!(app.config.provider, "openai");
+    }
+
+    #[test]
+    fn slash_system_sets_prompt() {
+        let mut app = test_app();
+        app.handle_slash_command("/system You are a pirate").unwrap();
+        assert_eq!(
+            app.config.system_prompt.as_deref(),
+            Some("You are a pirate")
+        );
+    }
+
+    #[test]
+    fn slash_temp_sets_temperature() {
+        let mut app = test_app();
+        app.handle_slash_command("/temp 1.5").unwrap();
+        assert!((app.config.temperature - 1.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn slash_temp_clamps() {
+        let mut app = test_app();
+        app.handle_slash_command("/temp 5.0").unwrap();
+        assert!((app.config.temperature - 2.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn slash_tools_on_off() {
+        let mut app = test_app();
+        assert!(app.tools_enabled);
+
+        app.handle_slash_command("/tools off").unwrap();
+        assert!(!app.tools_enabled);
+
+        app.handle_slash_command("/tools on").unwrap();
+        assert!(app.tools_enabled);
+    }
+
+    #[test]
+    fn slash_help_opens_overlay() {
+        let mut app = test_app();
+        app.handle_slash_command("/help").unwrap();
+        assert_eq!(app.overlay, Overlay::Help);
+    }
+
+    #[test]
+    fn slash_unknown_shows_error() {
+        let mut app = test_app();
+        app.handle_slash_command("/nonexistent").unwrap();
+        let msg = app.status_message.as_deref().unwrap_or("");
+        assert!(msg.contains("Unknown command"), "expected unknown command message, got: {msg}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Scroll management
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn scroll_down_adds() {
+        let mut app = test_app();
+        app.scroll_down(5);
+        assert_eq!(app.scroll_offset, 5);
+        app.scroll_down(3);
+        assert_eq!(app.scroll_offset, 8);
+    }
+
+    #[test]
+    fn scroll_up_subtracts_and_disables_auto_scroll() {
+        let mut app = test_app();
+        app.scroll_offset = 10;
+        app.auto_scroll = true;
+        app.scroll_up(3);
+        assert_eq!(app.scroll_offset, 7);
+        assert!(!app.auto_scroll);
+    }
+
+    #[test]
+    fn scroll_up_saturates_at_zero() {
+        let mut app = test_app();
+        app.scroll_offset = 2;
+        app.scroll_up(10);
+        assert_eq!(app.scroll_offset, 0);
+    }
+
+    #[test]
+    fn scroll_to_bottom_sets_max_and_auto_scroll() {
+        let mut app = test_app();
+        app.auto_scroll = false;
+        app.scroll_to_bottom();
+        assert_eq!(app.scroll_offset, usize::MAX);
+        assert!(app.auto_scroll);
+    }
+
+    #[test]
+    fn scroll_to_top_sets_zero() {
+        let mut app = test_app();
+        app.scroll_offset = 100;
+        app.scroll_to_top();
+        assert_eq!(app.scroll_offset, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Text editing
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn insert_char_appends() {
+        let mut app = test_app();
+        app.insert_char('h');
+        app.insert_char('i');
+        assert_eq!(app.input, "hi");
+        assert_eq!(app.cursor_pos, 2);
+    }
+
+    #[test]
+    fn insert_char_mid_string() {
+        let mut app = test_app();
+        app.input = "hllo".into();
+        app.cursor_pos = 1;
+        app.insert_char('e');
+        assert_eq!(app.input, "hello");
+        assert_eq!(app.cursor_pos, 2);
+    }
+
+    #[test]
+    fn delete_char_before_cursor_removes_prev() {
+        let mut app = test_app();
+        app.input = "abc".into();
+        app.cursor_pos = 2;
+        app.delete_char_before_cursor();
+        assert_eq!(app.input, "ac");
+        assert_eq!(app.cursor_pos, 1);
+    }
+
+    #[test]
+    fn delete_char_before_cursor_at_start_noop() {
+        let mut app = test_app();
+        app.input = "abc".into();
+        app.cursor_pos = 0;
+        app.delete_char_before_cursor();
+        assert_eq!(app.input, "abc");
+    }
+
+    #[test]
+    fn delete_char_at_cursor_removes_current() {
+        let mut app = test_app();
+        app.input = "abc".into();
+        app.cursor_pos = 1;
+        app.delete_char_at_cursor();
+        assert_eq!(app.input, "ac");
+        assert_eq!(app.cursor_pos, 1);
+    }
+
+    #[test]
+    fn delete_char_at_cursor_end_noop() {
+        let mut app = test_app();
+        app.input = "abc".into();
+        app.cursor_pos = 3;
+        app.delete_char_at_cursor();
+        assert_eq!(app.input, "abc");
+    }
+
+    // -----------------------------------------------------------------------
+    // Undo / Redo
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn undo_restores_previous_state() {
+        let mut app = test_app();
+        app.insert_char('a');
+        app.insert_char('b');
+        assert_eq!(app.input, "ab");
+
+        app.undo();
+        assert_eq!(app.input, "a");
+        assert_eq!(app.cursor_pos, 1);
+    }
+
+    #[test]
+    fn redo_restores_undone_state() {
+        let mut app = test_app();
+        app.insert_char('x');
+        app.insert_char('y');
+        app.undo();
+        assert_eq!(app.input, "x");
+
+        app.redo();
+        assert_eq!(app.input, "xy");
+        assert_eq!(app.cursor_pos, 2);
+    }
+
+    #[test]
+    fn undo_empty_shows_nothing_to_undo() {
+        let mut app = test_app();
+        app.undo();
+        assert_eq!(app.status_message.as_deref(), Some("Nothing to undo"));
+    }
+
+    #[test]
+    fn redo_empty_shows_nothing_to_redo() {
+        let mut app = test_app();
+        app.redo();
+        assert_eq!(app.status_message.as_deref(), Some("Nothing to redo"));
+    }
+
+    #[test]
+    fn new_edit_after_undo_clears_redo_stack() {
+        let mut app = test_app();
+        app.insert_char('a');
+        app.insert_char('b');
+        app.insert_char('c');
+        app.undo(); // back to "ab"
+        app.insert_char('d'); // now "abd", redo stack should be empty
+        app.redo();
+        assert_eq!(
+            app.status_message.as_deref(),
+            Some("Nothing to redo")
+        );
+        assert_eq!(app.input, "abd");
+    }
+
+    // -----------------------------------------------------------------------
+    // Search
+    // -----------------------------------------------------------------------
+
+    fn add_msg(app: &mut App, role: &str, content: &str) {
+        app.messages.push(ChatMessage {
+            role: role.into(),
+            content: content.into(),
+            timestamp: chrono::Utc::now(),
+            tool_invocations: Vec::new(),
+        });
+    }
+
+    #[test]
+    fn search_finds_matching_messages() {
+        let mut app = test_app();
+        add_msg(&mut app, "user", "hello world");
+        add_msg(&mut app, "assistant", "goodbye world");
+        add_msg(&mut app, "user", "foo bar");
+
+        app.search_query = "world".into();
+        app.execute_search();
+
+        assert_eq!(app.search_matches, vec![0, 1]);
+        let msg = app.status_message.as_deref().unwrap();
+        assert!(msg.contains("1/2"));
+    }
+
+    #[test]
+    fn search_case_insensitive() {
+        let mut app = test_app();
+        add_msg(&mut app, "user", "Hello World");
+
+        app.search_query = "hello".into();
+        app.execute_search();
+
+        assert_eq!(app.search_matches, vec![0]);
+    }
+
+    #[test]
+    fn search_no_matches() {
+        let mut app = test_app();
+        add_msg(&mut app, "user", "hello");
+
+        app.search_query = "xyz".into();
+        app.execute_search();
+
+        assert!(app.search_matches.is_empty());
+        let msg = app.status_message.as_deref().unwrap();
+        assert!(msg.contains("not found"));
+    }
+
+    #[test]
+    fn search_empty_query_noop() {
+        let mut app = test_app();
+        add_msg(&mut app, "user", "hello");
+
+        app.search_query = String::new();
+        app.execute_search();
+
+        assert!(app.search_matches.is_empty());
+    }
+
+    #[test]
+    fn next_search_match_wraps() {
+        let mut app = test_app();
+        add_msg(&mut app, "user", "hello");
+        add_msg(&mut app, "assistant", "hello again");
+        add_msg(&mut app, "user", "hello once more");
+
+        app.search_query = "hello".into();
+        app.execute_search();
+        assert_eq!(app.search_match_idx, 0);
+
+        app.next_search_match();
+        assert_eq!(app.search_match_idx, 1);
+
+        app.next_search_match();
+        assert_eq!(app.search_match_idx, 2);
+
+        app.next_search_match(); // wraps
+        assert_eq!(app.search_match_idx, 0);
+    }
+
+    #[test]
+    fn prev_search_match_wraps() {
+        let mut app = test_app();
+        add_msg(&mut app, "user", "hello");
+        add_msg(&mut app, "assistant", "hello again");
+
+        app.search_query = "hello".into();
+        app.execute_search();
+        assert_eq!(app.search_match_idx, 0);
+
+        app.prev_search_match(); // wraps to last
+        assert_eq!(app.search_match_idx, 1);
+
+        app.prev_search_match();
+        assert_eq!(app.search_match_idx, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // Send message (sync parts)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn send_message_routes_slash_commands() {
+        let mut app = test_app();
+        app.input = "/help".into();
+        app.cursor_pos = 5;
+
+        // send_message is async but slash commands are handled synchronously
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(app.send_message()).unwrap();
+
+        assert_eq!(app.overlay, Overlay::Help);
+        assert!(app.input.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Common prefix helper
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn common_prefix_basic() {
+        assert_eq!(
+            common_prefix(&["foobar".into(), "foobaz".into(), "fooqux".into()]),
+            Some("foo".into())
+        );
+    }
+
+    #[test]
+    fn common_prefix_identical() {
+        assert_eq!(
+            common_prefix(&["abc".into(), "abc".into()]),
+            Some("abc".into())
+        );
+    }
+
+    #[test]
+    fn common_prefix_none() {
+        assert_eq!(
+            common_prefix(&["abc".into(), "xyz".into()]),
+            Some("".into())
+        );
+    }
+
+    #[test]
+    fn common_prefix_empty_slice() {
+        assert_eq!(common_prefix(&[]), None);
+    }
+
+    #[test]
+    fn common_prefix_single() {
+        assert_eq!(
+            common_prefix(&["hello".into()]),
+            Some("hello".into())
+        );
+    }
+}
